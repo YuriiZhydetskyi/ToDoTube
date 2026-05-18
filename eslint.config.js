@@ -47,17 +47,23 @@ export default tseslint.config(
       'boundaries/dependencies': [
         'error',
         {
+          // With `default: 'disallow'`, EVERY cross-element edge is
+          // forbidden unless explicitly allowed below. Same-element edges
+          // must also be allowed explicitly (e.g. shared -> shared), so
+          // every type appears in its own allow list.
           default: 'disallow',
           rules: [
-            { from: { type: 'shared' }, disallow: { to: { type: '*' } } },
-            { from: { type: 'providers' }, allow: { to: { type: 'shared' } } },
-            { from: { type: 'surfaces' }, allow: { to: { type: 'shared' } } },
-            { from: { type: 'ui' }, allow: { to: { type: 'shared' } } },
+            { from: { type: 'shared' }, allow: { to: { type: ['shared'] } } },
+            { from: { type: 'providers' }, allow: { to: { type: ['providers', 'shared'] } } },
+            { from: { type: 'surfaces' }, allow: { to: { type: ['surfaces', 'shared'] } } },
+            { from: { type: 'ui' }, allow: { to: { type: ['ui', 'shared'] } } },
             {
               from: { type: 'core' },
-              allow: { to: { type: ['shared', 'providers', 'surfaces', 'ui'] } },
+              allow: {
+                to: { type: ['core', 'shared', 'providers', 'surfaces', 'ui'] },
+              },
             },
-            { from: { type: 'entry' }, allow: { to: { type: ['shared', 'core'] } } },
+            { from: { type: 'entry' }, allow: { to: { type: ['entry', 'shared', 'core'] } } },
           ],
         },
       ],
