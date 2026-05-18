@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ToDoTube</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #0f0f0f;
+        --fg-muted: #606060;
+        --border-strong: rgba(0, 0, 0, 0.2);
+        --primary: #065fd4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f0f0f;
+          --fg: #ffffff;
+          --fg-muted: #aaa;
+          --border-strong: rgba(255, 255, 255, 0.2);
+          --primary: #3ea6ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'Roboto', 'Segoe UI', system-ui, sans-serif;
+        font-size: 13px;
+      }
+      .popup {
+        min-width: 240px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .popup-title {
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .popup-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+      }
+      .popup-status {
+        color: var(--fg-muted);
+        font-size: 12px;
+        min-height: 16px;
+      }
+      .btn {
+        cursor: pointer;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: inherit;
+        font-weight: 500;
+        border: 1px solid var(--border-strong);
+        background: var(--bg);
+        color: var(--fg);
+      }
+      .btn:hover {
+        border-color: var(--primary);
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -8,7 +8,7 @@ Firefox + Chrome. Manifest V3. TypeScript + [WXT](https://wxt.dev). Vanilla DOM.
 
 ## Status
 
-🚧 Pre-alpha. v1 in active development.
+🚧 Alpha. All v1 features implemented (see [REQUIREMENTS.md](REQUIREMENTS.md) §12); not yet published to the stores.
 
 ## Quick start (development)
 
@@ -19,6 +19,15 @@ pnpm dev:firefox      # Firefox
 ```
 
 WXT opens a fresh browser window with the unpacked extension loaded. Navigate to any YouTube watch page (`youtube.com/watch?v=…`).
+
+Before TickTick OAuth can succeed end-to-end you also need a `.env` file — see "TickTick OAuth setup" below.
+
+## Loading the built extension manually
+
+If you'd rather load the built bundle (e.g. to test the production build):
+
+- **Chrome:** `pnpm build`, then open `chrome://extensions`, enable Developer Mode, click "Load unpacked", and select `.output/chrome-mv3`.
+- **Firefox:** `pnpm build:firefox`, then open `about:debugging#/runtime/this-firefox`, click "Load Temporary Add-on", and select any file inside `.output/firefox-mv3`.
 
 ## Build
 
@@ -59,6 +68,16 @@ Three-layer model with hard ESLint-enforced import boundaries:
 ```
 
 YouTube selectors live in **exactly one place**: `src/surfaces/desktop-watch/selectors.ts`. See [docs/SELECTORS.md](docs/SELECTORS.md) for how the multi-strategy resolver works and how to author an override when YouTube changes things.
+
+## Features (v1)
+
+- Replaces YouTube's right-side recommendation rail and end-of-video grid with your TickTick task list on every watch page.
+- Defaults to the **Today** smart list (computed client-side in your local TZ since TickTick has no first-party Today endpoint).
+- Click a task to mark it complete (optimistic UI; reverts on API failure).
+- Settings page with Simple sections (account, display, behavior) and an Advanced section (verbose logging, debug overlay, selector override editor, force re-auth / re-sync, JSON export/import).
+- Toolbar popup with a master on/off toggle and a status line.
+- SPA-aware: re-renders on YouTube's pushState navigations.
+- Zero telemetry. The extension only talks to YouTube and TickTick.
 
 ## Contributing
 
