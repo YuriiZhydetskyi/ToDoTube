@@ -31,7 +31,10 @@ async function handle(req: Request): Promise<HandlerResult> {
       const settings = await getSettings();
       const provider = getProviderOrNull(settings.activeProviderId);
       const authenticated = provider ? await provider.isAuthenticated() : false;
-      return ok({ settings, authenticated });
+      const activeListId = settings.activeProviderId
+        ? ((await getProviderState(settings.activeProviderId)).activeListId ?? null)
+        : null;
+      return ok({ settings, authenticated, activeListId });
     }
 
     case 'SET_ENABLED': {

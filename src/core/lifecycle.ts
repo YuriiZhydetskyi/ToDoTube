@@ -93,6 +93,11 @@ export function start(ctx: ContentScriptContext): void {
       state.replaceEndscreen = msg.settings.replaceEndscreen;
       if (msg.settings.activeProviderId) state.providerId = msg.settings.activeProviderId;
       evaluate(state);
+    } else if (msg.type === 'LIST_CHANGED') {
+      if (msg.providerId === state.providerId && msg.listId !== state.listId) {
+        state.listId = msg.listId;
+        void fetchTasks(state);
+      }
     } else if (msg.type === 'TASKS_UPDATED') {
       if (msg.providerId === state.providerId && msg.listId === state.listId) {
         state.tasks = msg.tasks;
@@ -123,13 +128,14 @@ async function initState(state: State): Promise<void> {
     log.warn('GET_STATE failed:', r.error);
     return;
   }
-  const { settings, authenticated } = r.value;
+  const { settings, authenticated, activeListId } = r.value;
   setVerbose(settings.verboseLogging);
   state.enabled = settings.enabled;
   state.replaceRightRail = settings.replaceRightRail;
   state.replaceEndscreen = settings.replaceEndscreen;
   state.authenticated = authenticated;
   if (settings.activeProviderId) state.providerId = settings.activeProviderId;
+  if (activeListId) state.listId = activeListId;
   evaluate(state);
 }
 

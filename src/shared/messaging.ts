@@ -14,6 +14,10 @@ export interface GlobalState {
   settings: Settings;
   // Whether the active provider has valid (non-expired) tokens.
   authenticated: boolean;
+  // The currently-displayed list for the active provider. Lives in
+  // provider state, not settings, so we surface it here too — the
+  // lifecycle needs both pieces to decide what to fetch.
+  activeListId: ListId | null;
 }
 
 // Used in Schema entries that have no payload beyond the `type` tag.
@@ -51,7 +55,8 @@ export type Response<T extends MessageType> = Schema[T]['res'];
 export type Broadcast =
   | { type: 'TASKS_UPDATED'; providerId: ProviderId; listId: ListId; tasks: Task[] }
   | { type: 'AUTH_REQUIRED'; providerId: ProviderId }
-  | { type: 'SETTINGS_CHANGED'; settings: Settings };
+  | { type: 'SETTINGS_CHANGED'; settings: Settings }
+  | { type: 'LIST_CHANGED'; providerId: ProviderId; listId: ListId };
 
 export async function sendToBackground<T extends MessageType>(
   req: Request<T>,
@@ -90,5 +95,10 @@ function isWireResult(v: unknown): v is Result<unknown, unknown> {
 function isBroadcast(v: unknown): v is Broadcast {
   if (typeof v !== 'object' || v === null || !('type' in v)) return false;
   const t = (v as { type: unknown }).type;
-  return t === 'TASKS_UPDATED' || t === 'AUTH_REQUIRED' || t === 'SETTINGS_CHANGED';
+  return (
+    t === 'TASKS_UPDATED' ||
+    t === 'AUTH_REQUIRED' ||
+    t === 'SETTINGS_CHANGED' ||
+    t === 'LIST_CHANGED'
+  );
 }

@@ -69,9 +69,11 @@ async function listTasksToday(opts: ListTasksOpts): Promise<Result<Task[], strin
   const projects = await api.listProjects();
   if (!projects.ok) return err(projects.error);
 
-  const now = new Date();
-  const start = startOfLocalDay(now);
-  const end = endOfLocalDay(now);
+  // "Today" includes anything due BY end-of-day today — i.e. today's
+  // tasks AND any overdue ones. This matches the behavior of TickTick's
+  // own Today view and is what users actually expect ("show me what
+  // needs doing today, including the things I missed").
+  const end = endOfLocalDay(new Date());
 
   const matches: Task[] = [];
   for (const project of projects.value) {
@@ -81,7 +83,7 @@ async function listTasksToday(opts: ListTasksOpts): Promise<Result<Task[], strin
     for (const t of data.value.tasks) {
       if (!opts.includeCompleted && t.status !== 0) continue;
       if (!t.dueDate) continue;
-      if (!isDueBetween(t.dueDate, start, end)) continue;
+      if (!isDueByEndOfDay(t.dueDate, end)) continue;
       matches.push(mapTask(t));
     }
   }
@@ -127,4 +129,14 @@ export function isDueBetween(iso: string, start: Date, end: Date): boolean {
   if (Number.isNaN(due.getTime())) return false;
   const ms = due.getTime();
   return ms >= start.getTime() && ms <= end.getTime();
+}
+
+/**
+ * True when `iso` is at or before `end` (i.e. due-or-overdue by `end`).
+ * Used by the Today smart list to include overdue tasks.
+ */
+export function isDueByEndOfDay(iso: string, end: Date): boolean {
+  const due = new Date(iso);
+  if (Number.isNaN(due.getTime())) return false;
+  return due.getTime() <= end.getTime();
 }
