@@ -14,7 +14,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
 import { log, setVerbose } from '@/shared/logger';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
-import type { ListId, ProviderId, Task } from '@/shared/types';
+import type { ListId, Project, ProviderId, Task } from '@/shared/types';
 import {
   mountEndscreen,
   mountRightRail,
@@ -22,7 +22,7 @@ import {
   type MountHandle,
 } from '@/surfaces/desktop-watch/adapter';
 import { onEndscreenReady, type EndscreenTrigger } from '@/surfaces/desktop-watch/triggers';
-import { createPanel, updatePanel, type PanelState } from '@/ui/panel';
+import { createPanel, updatePanel, type PanelHeader, type PanelState } from '@/ui/panel';
 
 const WATCH_PATH = '/watch';
 const REMOUNT_RETRY_INTERVAL_MS = 250;
@@ -47,6 +47,9 @@ interface State {
   providerId: ProviderId;
   listId: ListId;
   tasks: Task[];
+  // Projects available to the in-panel list picker. Empty until the
+  // first successful LIST_PROJECTS call after authentication.
+  projects: Project[];
   ui: UIState;
 
   rightRailPanel: HTMLElement | null;
@@ -69,6 +72,7 @@ export function start(ctx: ContentScriptContext): void {
     providerId: DEFAULT_PROVIDER,
     listId: DEFAULT_LIST,
     tasks: [],
+    projects: [],
     ui: { kind: 'loading' },
     rightRailPanel: null,
     rightRailMount: null,
@@ -137,6 +141,19 @@ async function initState(state: State): Promise<void> {
   if (settings.activeProviderId) state.providerId = settings.activeProviderId;
   if (activeListId) state.listId = activeListId;
   evaluate(state);
+  if (authenticated) void loadProjects(state);
+}
+
+async function loadProjects(state: State): Promise<void> {
+  const r = await sendToBackground({ type: 'LIST_PROJECTS', providerId: state.providerId });
+  if (!state.ctx.isValid) return;
+  if (!r.ok) {
+    log.debug('LIST_PROJECTS failed:', r.error);
+    return;
+  }
+  state.projects = r.value;
+  // Re-render so the new project list reaches the in-panel picker.
+  setUi(state, state.ui);
 }
 
 function evaluate(state: State): void {
@@ -283,24 +300,39 @@ function setUi(state: State, ui: UIState): void {
 function toPanelState(state: State): PanelState {
   switch (state.ui.kind) {
     case 'loading':
-      return { kind: 'loading' };
+      return { kind: 'loading', header: buildHeader(state) };
     case 'disconnected':
       return { kind: 'disconnected', onConnect: () => void onConnectClick(state) };
     case 'empty':
-      return { kind: 'empty' };
+      return { kind: 'empty', header: buildHeader(state) };
     case 'list':
       return {
         kind: 'list',
         tasks: state.ui.tasks,
         onComplete: (t) => void onCompleteClick(state, t),
+        header: buildHeader(state),
       };
     case 'error':
       return {
         kind: 'error',
         message: state.ui.message,
         onRetry: () => void fetchTasks(state),
+        header: buildHeader(state),
       };
   }
+}
+
+function buildHeader(state: State): PanelHeader | undefined {
+  if (!state.authenticated) return undefined;
+  return {
+    projects: state.projects,
+    currentListId: state.listId,
+    onListChange: (listId) => void onListPicked(state, listId),
+    onRefresh: () => {
+      void loadProjects(state);
+      void fetchTasks(state);
+    },
+  };
 }
 
 async function onConnectClick(state: State): Promise<void> {
@@ -313,9 +345,27 @@ async function onConnectClick(state: State): Promise<void> {
   }
   state.authenticated = r.value.authenticated;
   if (state.authenticated) {
+    void loadProjects(state);
     await fetchTasks(state);
   } else {
     setUi(state, { kind: 'disconnected' });
+  }
+}
+
+async function onListPicked(state: State, listId: ListId): Promise<void> {
+  if (listId === state.listId) return;
+  // Persist via background; the storage watcher there will broadcast
+  // LIST_CHANGED and our own broadcast handler will fetchTasks. Going
+  // through this single path keeps every open YouTube tab + Settings in
+  // sync without us duplicating the fetch here.
+  const r = await sendToBackground({
+    type: 'SET_ACTIVE_LIST',
+    providerId: state.providerId,
+    listId,
+  });
+  if (!state.ctx.isValid) return;
+  if (!r.ok) {
+    setUi(state, { kind: 'error', message: r.error });
   }
 }
 

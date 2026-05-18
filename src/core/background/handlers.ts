@@ -87,6 +87,15 @@ async function handle(req: Request): Promise<HandlerResult> {
       return ok(null);
     }
 
+    case 'SET_ACTIVE_LIST': {
+      const provider = getProviderOrNull(req.providerId);
+      if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      await setProviderState(req.providerId, { activeListId: req.listId });
+      // The storage watcher in `entrypoints/background.ts` will broadcast
+      // LIST_CHANGED — we don't need to do it here.
+      return ok(null);
+    }
+
     case 'REFRESH_NOW': {
       const provider = getProviderOrNull(req.providerId);
       if (!provider) return err(`Unknown provider: ${req.providerId}`);
@@ -147,6 +156,7 @@ const KNOWN_TYPES: readonly MessageType[] = [
   'AUTH_DISCONNECT',
   'REFRESH_NOW',
   'SET_ENABLED',
+  'SET_ACTIVE_LIST',
 ];
 
 function isRequest(v: unknown): v is Request {

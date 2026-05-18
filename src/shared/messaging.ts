@@ -41,6 +41,7 @@ export interface Schema {
   AUTH_DISCONNECT: { req: { providerId: ProviderId }; res: null };
   REFRESH_NOW: { req: { providerId: ProviderId; listId: ListId }; res: Task[] };
   SET_ENABLED: { req: { enabled: boolean }; res: null };
+  SET_ACTIVE_LIST: { req: { providerId: ProviderId; listId: ListId }; res: null };
 }
 
 export type MessageType = keyof Schema;

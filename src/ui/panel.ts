@@ -2,15 +2,26 @@
 // canonical task list; this file is a render-only function over a typed
 // state value, plus `updatePanel(root, state)` for in-place re-renders.
 
-import type { Task } from '@/shared/types';
+import type { ListId, Project, Task } from '@/shared/types';
+
+// Optional header rendered above the task body — list picker on the
+// left, refresh button on the right. The lifecycle passes this only
+// when authenticated; states with no header (placeholder, disconnected)
+// render without one.
+export interface PanelHeader {
+  projects: Project[];
+  currentListId: ListId;
+  onListChange: (listId: ListId) => void;
+  onRefresh: () => void;
+}
 
 export type PanelState =
   | { kind: 'placeholder' }
-  | { kind: 'loading' }
+  | { kind: 'loading'; header?: PanelHeader }
   | { kind: 'disconnected'; onConnect: () => void }
-  | { kind: 'empty' }
-  | { kind: 'list'; tasks: Task[]; onComplete: (task: Task) => void }
-  | { kind: 'error'; message: string; onRetry: () => void };
+  | { kind: 'empty'; header?: PanelHeader }
+  | { kind: 'list'; tasks: Task[]; onComplete: (task: Task) => void; header?: PanelHeader }
+  | { kind: 'error'; message: string; onRetry: () => void; header?: PanelHeader };
 
 // Inline `all: initial` reset on the root keeps YouTube's stylesheets
 // from leaking into our panel.
@@ -41,6 +52,11 @@ export function updatePanel(root: HTMLElement, state: PanelState): void {
 
 function render(root: HTMLElement, state: PanelState): void {
   root.replaceChildren();
+
+  if ('header' in state && state.header) {
+    root.appendChild(renderHeader(state.header));
+  }
+
   switch (state.kind) {
     case 'placeholder':
       root.appendChild(heading('ToDoTube'));
@@ -48,7 +64,7 @@ function render(root: HTMLElement, state: PanelState): void {
       return;
 
     case 'loading':
-      root.appendChild(heading('ToDoTube'));
+      if (!state.header) root.appendChild(heading('ToDoTube'));
       root.appendChild(line('Loading your tasks…'));
       return;
 
@@ -61,12 +77,11 @@ function render(root: HTMLElement, state: PanelState): void {
     }
 
     case 'empty':
-      root.appendChild(heading('You’re done for today 🎉'));
+      root.appendChild(heading('You’re done 🎉'));
       root.appendChild(line('Nothing left on your list.'));
       return;
 
     case 'list': {
-      root.appendChild(heading('Today'));
       if (state.tasks.length === 0) {
         root.appendChild(line('No matching tasks.'));
         return;
@@ -87,6 +102,76 @@ function render(root: HTMLElement, state: PanelState): void {
       return;
     }
   }
+}
+
+function renderHeader(header: PanelHeader): HTMLElement {
+  const bar = document.createElement('div');
+  bar.style.cssText = `
+    ${RESET}
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 12px 0;
+  `;
+
+  // List picker — hidden until we know what lists exist. While projects
+  // are still loading we just show the refresh button, which gives the
+  // user something to click if the initial fetch is slow.
+  if (header.projects.length > 0) {
+    const select = document.createElement('select');
+    select.style.cssText = `
+      ${RESET}
+      flex: 1;
+      min-width: 0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
+      background: var(--yt-spec-base-background, #ffffff);
+      color: var(--yt-spec-text-primary, #0f0f0f);
+      font-family: inherit;
+      font-size: inherit;
+      cursor: pointer;
+    `;
+    for (const p of header.projects) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.synthetic ? `${p.name} (smart)` : p.name;
+      if (p.id === header.currentListId) opt.selected = true;
+      select.appendChild(opt);
+    }
+    select.addEventListener('change', () => header.onListChange(select.value));
+    bar.appendChild(select);
+  } else {
+    // Spacer so the refresh button stays on the right while loading.
+    const spacer = document.createElement('div');
+    spacer.style.cssText = `${RESET} flex: 1;`;
+    bar.appendChild(spacer);
+  }
+
+  const refresh = document.createElement('button');
+  refresh.type = 'button';
+  refresh.setAttribute('aria-label', 'Refresh tasks');
+  refresh.title = 'Refresh';
+  // U+21BB CLOCKWISE OPEN CIRCLE ARROW — universally rendered, no need
+  // to bundle an SVG sprite for one glyph.
+  refresh.textContent = '↻';
+  refresh.style.cssText = `
+    ${RESET}
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
+    background: var(--yt-spec-base-background, #ffffff);
+    color: var(--yt-spec-text-primary, #0f0f0f);
+    font-size: 18px;
+    line-height: 1;
+    flex-shrink: 0;
+  `;
+  refresh.addEventListener('click', () => header.onRefresh());
+  bar.appendChild(refresh);
+
+  return bar;
 }
 
 function heading(text: string): HTMLElement {
