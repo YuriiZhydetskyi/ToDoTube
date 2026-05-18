@@ -1,6 +1,5 @@
 // Dispatcher for the typed message bus. Every Schema entry from
-// shared/messaging.ts is handled here (or returns err('not-implemented')
-// while the provider layer is still being built).
+// shared/messaging.ts is handled here.
 //
 // Background is the single source of truth for the active provider and
 // any per-provider state (tokens, last sync, active list). Popup and
@@ -9,8 +8,11 @@
 
 import { browser } from 'wxt/browser';
 
+import { getProviderOrNull } from '@/providers/registry';
+import { log } from '@/shared/logger';
 import { err, ok, type Broadcast, type MessageType, type Request } from '@/shared/messaging';
-import { getSettings, setSettings } from '@/shared/storage';
+import { getProviderState, getSettings, setProviderState, setSettings } from '@/shared/storage';
+import type { ListId, ProviderId } from '@/shared/types';
 
 import { broadcastToYouTubeTabs } from './broadcast';
 
@@ -27,9 +29,9 @@ async function handle(req: Request): Promise<HandlerResult> {
   switch (req.type) {
     case 'GET_STATE': {
       const settings = await getSettings();
-      // Real `authenticated` check lands when the provider is wired up
-      // in Step 6/7. Until then we are always disconnected.
-      return ok({ settings, authenticated: false });
+      const provider = getProviderOrNull(settings.activeProviderId);
+      const authenticated = provider ? await provider.isAuthenticated() : false;
+      return ok({ settings, authenticated });
     }
 
     case 'SET_ENABLED': {
@@ -37,20 +39,99 @@ async function handle(req: Request): Promise<HandlerResult> {
       return ok(null);
     }
 
-    case 'LIST_PROJECTS':
-    case 'LIST_TASKS':
-    case 'COMPLETE_TASK':
-    case 'AUTH_START':
-    case 'AUTH_DISCONNECT':
-    case 'REFRESH_NOW':
-      return err(`${req.type}: not implemented yet (provider lands in Step 6/7)`);
+    case 'LIST_PROJECTS': {
+      const provider = getProviderOrNull(req.providerId);
+      if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      return provider.listProjects();
+    }
+
+    case 'LIST_TASKS': {
+      const provider = getProviderOrNull(req.providerId);
+      if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      return provider.listTasks(req.listId);
+    }
+
+    case 'COMPLETE_TASK': {
+      const provider = getProviderOrNull(req.providerId);
+      if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      const r = await provider.completeTask(req.projectId, req.taskId);
+      if (!r.ok) return err(r.error);
+      return ok(null);
+    }
+
+    case 'AUTH_START': {
+      const provider = getProviderOrNull(req.providerId);
+      if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      const r = await provider.authenticate();
+      if (!r.ok) return err(r.error);
+      // Make this the active provider if no other was set.
+      const settings = await getSettings();
+      if (!settings.activeProviderId) {
+        await setSettings({ activeProviderId: req.providerId });
+      }
+      return ok(r.value);
+    }
+
+    case 'AUTH_DISCONNECT': {
+      const provider = getProviderOrNull(req.providerId);
+      if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      await provider.disconnect();
+      const settings = await getSettings();
+      if (settings.activeProviderId === req.providerId) {
+        await setSettings({ activeProviderId: null });
+      }
+      void broadcastToYouTubeTabs({ type: 'AUTH_REQUIRED', providerId: req.providerId });
+      return ok(null);
+    }
+
+    case 'REFRESH_NOW': {
+      const provider = getProviderOrNull(req.providerId);
+      if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      const r = await provider.listTasks(req.listId);
+      if (!r.ok) return err(r.error);
+      void broadcastToYouTubeTabs({
+        type: 'TASKS_UPDATED',
+        providerId: req.providerId,
+        listId: req.listId,
+        tasks: r.value,
+      });
+      return ok(r.value);
+    }
 
     default:
       return err(`Unhandled message: ${(req as { type: string }).type}`);
   }
 }
 
-// Re-export for the background entrypoint to wire from storage watchers.
+/**
+ * Called from the alarm tick in `entrypoints/background.ts`. Refreshes
+ * the active provider's active list and broadcasts to YouTube tabs.
+ * Silent on errors — the next tick will retry.
+ */
+export async function runRefresh(): Promise<void> {
+  const settings = await getSettings();
+  if (!settings.enabled) return;
+  if (!settings.activeProviderId) return;
+  const provider = getProviderOrNull(settings.activeProviderId);
+  if (!provider) return;
+
+  const state = await getProviderState(settings.activeProviderId);
+  const listId: ListId = state.activeListId ?? 'smart:today';
+
+  const r = await provider.listTasks(listId);
+  if (!r.ok) {
+    log.debug('Refresh failed:', r.error);
+    return;
+  }
+  await setProviderState(settings.activeProviderId, { lastSyncAt: Date.now() });
+  void broadcastToYouTubeTabs({
+    type: 'TASKS_UPDATED',
+    providerId: settings.activeProviderId as ProviderId,
+    listId,
+    tasks: r.value,
+  });
+}
+
 export { broadcastToYouTubeTabs };
 export type { Broadcast };
 

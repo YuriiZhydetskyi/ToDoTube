@@ -2,7 +2,7 @@
 // by the browser at any time — anything we do here must be idempotent
 // and pick up its state from persistent storage on every wake.
 
-import { broadcastToYouTubeTabs, registerHandlers } from '@/core/background/handlers';
+import { broadcastToYouTubeTabs, registerHandlers, runRefresh } from '@/core/background/handlers';
 import { onRefreshAlarm, scheduleRefresh } from '@/core/background/refresh';
 import { log, setVerbose } from '@/shared/logger';
 import { getSettings, onSettingsChange } from '@/shared/storage';
@@ -19,10 +19,7 @@ async function init(): Promise<void> {
   registerHandlers();
 
   await scheduleRefresh(settings);
-  onRefreshAlarm(() => {
-    // Provider-driven refresh lands in Step 7.
-    log.debug('Refresh tick (provider not wired yet)');
-  });
+  onRefreshAlarm(() => runRefresh());
 
   onSettingsChange((next, prev) => {
     setVerbose(next.verboseLogging);
