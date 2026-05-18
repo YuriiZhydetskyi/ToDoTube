@@ -1,10 +1,7 @@
 {
   "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
-    "noUncheckedIndexedAccess": true,
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "noUncheckedIndexedAccess": true
   },
-  "include": [".wxt/wxt.d.ts", "src/**/*", "entrypoints/**/*"]
+  "include": [".wxt/wxt.d.ts", "src/**/*"]
 }

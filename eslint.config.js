@@ -23,7 +23,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['src/**/*.{ts,tsx}', 'entrypoints/**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}'],
     plugins: { boundaries },
     settings: {
       // boundaries' dependency rule uses eslint-module-utils/resolve under
@@ -35,12 +35,15 @@ export default tseslint.config(
         node: true,
       },
       'boundaries/elements': [
+        // The entry pattern must come BEFORE the layer patterns: files
+        // under src/entrypoints/ would otherwise be matched as e.g.
+        // `core` if a core/* pattern came first.
+        { type: 'entry', pattern: 'src/entrypoints/**/*', mode: 'file' },
         { type: 'shared', pattern: 'src/shared/**/*', mode: 'file' },
         { type: 'providers', pattern: 'src/providers/**/*', mode: 'file' },
         { type: 'surfaces', pattern: 'src/surfaces/**/*', mode: 'file' },
         { type: 'ui', pattern: 'src/ui/**/*', mode: 'file' },
         { type: 'core', pattern: 'src/core/**/*', mode: 'file' },
-        { type: 'entry', pattern: 'entrypoints/**/*', mode: 'file' },
       ],
     },
     rules: {

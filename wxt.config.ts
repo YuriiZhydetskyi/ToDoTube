@@ -2,12 +2,21 @@ import { defineConfig } from 'wxt';
 
 // See https://wxt.dev/api/config.html
 //
-// Layout note: WXT's default `srcDir` is the project root, so it looks
-// for entrypoints in `<root>/entrypoints/`. We intentionally keep our
-// internal modules under `src/` (separate from the WXT-conventional
-// `entrypoints/`). Do not set `srcDir: 'src'` — that would move
-// entrypoints to `src/entrypoints/` and break the layered layout.
+// Layout note: with `srcDir: 'src'`, WXT looks for entrypoints in
+// `src/entrypoints/` and hardcodes the `@` alias to point to `src/`,
+// which is exactly what we want for `@/core/...`, `@/shared/...` etc.
+// The layered architecture (surfaces / core / providers / ui / shared)
+// lives at `src/<layer>/`.
 export default defineConfig({
+  srcDir: 'src',
+  // Firefox MV3 is opt-in in WXT 0.20 — explicit so both builds match.
+  manifestVersion: 3,
+  // We collect zero data (see REQUIREMENTS.md §8). The Firefox-MV3
+  // `data_collection_permissions` manifest declaration lands in Step 12
+  // alongside the rest of the release-prep metadata.
+  suppressWarnings: {
+    firefoxDataCollection: true,
+  },
   manifest: {
     name: 'ToDoTube',
     description: 'Replace YouTube recommendations with your to-do list.',
