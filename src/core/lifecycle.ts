@@ -1,13 +1,17 @@
 // Content-script lifecycle. The orchestrator for one tab's worth of
-// activity. Watches URL changes (YouTube is an SPA), mounts/unmounts the
-// panel into the surface adapter, and cleans up on script invalidation.
+// activity. Watches URL changes (YouTube is an SPA), reacts to settings
+// changes broadcast from the background, mounts/unmounts the panel via
+// the surface adapter, and cleans up on script invalidation.
 //
-// For Step 4 the panel is a static placeholder. The provider/state wiring
-// lands in Step 8.
+// Provider/state rendering lands in Step 8 — the panel stays a static
+// placeholder until then. What's live in Step 5: the master on/off
+// toggle from settings (popup-driven in Step 10) takes effect instantly
+// via the SETTINGS_CHANGED broadcast.
 
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-import { log } from '@/shared/logger';
+import { log, setVerbose } from '@/shared/logger';
+import { onBroadcast, sendToBackground } from '@/shared/messaging';
 import {
   mountRightRail,
   SelectorMissError,
@@ -21,40 +25,63 @@ const REMOUNT_RETRY_DEADLINE_MS = 5_000;
 
 interface State {
   mount: MountHandle | null;
-  // Set when a retry loop is currently scheduled, so we don't pile up.
   retryScheduled: boolean;
+  enabled: boolean;
 }
 
 export function start(ctx: ContentScriptContext): void {
   log.info('Lifecycle started');
 
-  const state: State = { mount: null, retryScheduled: false };
+  const state: State = { mount: null, retryScheduled: false, enabled: false };
 
-  // Initial evaluation on script load.
-  evaluate(ctx, state);
+  // Pull initial state from the background (the single source of truth
+  // for active provider/settings — see core/background/handlers.ts).
+  void initState(ctx, state);
 
-  // YouTube fires its own `yt-navigate-finish` and WXT bridges navigation
-  // via `wxt:locationchange`. The latter is the one to trust — it fires
-  // on every URL change including pushState/replaceState.
   ctx.addEventListener(window, 'wxt:locationchange', () => {
     log.debug('locationchange:', window.location.href);
     evaluate(ctx, state);
   });
 
+  const offBroadcast = onBroadcast((msg) => {
+    if (msg.type === 'SETTINGS_CHANGED') {
+      setVerbose(msg.settings.verboseLogging);
+      state.enabled = msg.settings.enabled;
+      evaluate(ctx, state);
+    }
+  });
+
   ctx.onInvalidated(() => {
     log.debug('script invalidated; tearing down');
+    offBroadcast();
     cleanup(state);
   });
 }
 
+async function initState(ctx: ContentScriptContext, state: State): Promise<void> {
+  const r = await sendToBackground({ type: 'GET_STATE' });
+  if (!ctx.isValid) return;
+  if (!r.ok) {
+    log.warn('GET_STATE failed:', r.error);
+    return;
+  }
+  setVerbose(r.value.settings.verboseLogging);
+  state.enabled = r.value.settings.enabled;
+  evaluate(ctx, state);
+}
+
 function evaluate(ctx: ContentScriptContext, state: State): void {
+  if (!state.enabled) {
+    cleanup(state);
+    return;
+  }
   if (!isWatchPage()) {
     cleanup(state);
     return;
   }
   if (state.mount) {
-    // Already mounted; navigation between watch pages still re-runs the
-    // mount path so we land in the freshly-rendered right rail.
+    // Navigation between watch pages still re-runs the mount path so we
+    // land in the freshly-rendered right rail.
     cleanup(state);
   }
   scheduleMount(ctx, state, performance.now());
@@ -67,7 +94,7 @@ function scheduleMount(ctx: ContentScriptContext, state: State, startTime: numbe
   const tick = (): void => {
     state.retryScheduled = false;
     if (!ctx.isValid) return;
-    if (!isWatchPage()) {
+    if (!state.enabled || !isWatchPage()) {
       cleanup(state);
       return;
     }
@@ -83,8 +110,6 @@ function scheduleMount(ctx: ContentScriptContext, state: State, startTime: numbe
         log.warn('Unexpected mount error:', err);
         return;
       }
-      // Selector miss — YouTube hasn't rendered the rail yet. Retry
-      // briefly, then give up and leave YouTube alone.
       const elapsed = performance.now() - startTime;
       if (elapsed > REMOUNT_RETRY_DEADLINE_MS) {
         log.warn('Right rail did not appear within', REMOUNT_RETRY_DEADLINE_MS, 'ms; giving up');
@@ -95,7 +120,6 @@ function scheduleMount(ctx: ContentScriptContext, state: State, startTime: numbe
     }
   };
 
-  // Fire the first attempt asynchronously so the caller's stack unwinds.
   ctx.setTimeout(tick, 0);
 }
 

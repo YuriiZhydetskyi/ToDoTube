@@ -47,6 +47,12 @@ export default tseslint.config(
       ],
     },
     rules: {
+      // Underscore-prefixed unused vars are intentional (e.g. positional
+      // callback args we want to keep for future use).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       'boundaries/dependencies': [
         'error',
         {

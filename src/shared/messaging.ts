@@ -16,11 +16,17 @@ export interface GlobalState {
   authenticated: boolean;
 }
 
+// Used in Schema entries that have no payload beyond the `type` tag.
+// `Record<never, never>` is the proper "no required keys" empty-object
+// type — intersecting it with `{ type: '…' }` leaves `{ type: '…' }`
+// intact, unlike `Record<string, never>` (which forbids `type`).
+type Empty = Record<never, never>;
+
 // One source of truth for every (request shape, response shape) pair.
 // Adding a new message means adding one entry here and handling it in
 // `src/core/background/handlers.ts`.
 export interface Schema {
-  GET_STATE: { req: Record<string, never>; res: GlobalState };
+  GET_STATE: { req: Empty; res: GlobalState };
   LIST_PROJECTS: { req: { providerId: ProviderId }; res: Project[] };
   LIST_TASKS: { req: { providerId: ProviderId; listId: ListId }; res: Task[] };
   COMPLETE_TASK: {
