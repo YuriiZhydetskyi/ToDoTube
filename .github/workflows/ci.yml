@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm compile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      # Selector guard — YouTube identifiers must live ONLY in
+      # src/surfaces/<surface>/{selectors,heuristics}.ts. See
+      # docs/SELECTORS.md and REQUIREMENTS.md §6.1.
+      - name: Selector guard
+        run: |
+          set -e
+          if ! find src -type f -name '*.ts' -print -quit 2>/dev/null | grep -q .; then
+            echo "No TypeScript files in src/ yet; skipping selector guard."
+            exit 0
+          fi
+          leaked=$(grep -RIn --include='*.ts' \
+                     -E '(\bytd-|yt-navigate-finish|#secondary|#related)' src/ \
+                   | grep -vE 'src/surfaces/[^/]+/(selectors|heuristics)\.ts' \
+                   || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::YouTube identifiers leaked outside selectors.ts/heuristics.ts:"
+            echo "$leaked"
+            exit 1
+          fi
+          echo "Selector guard passed."
+
+      - name: Build (Chrome)
+        run: pnpm build
+
+      - name: Build (Firefox)
+        run: pnpm build:firefox

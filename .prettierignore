@@ -4,3 +4,6 @@ node_modules/
 web-ext-artifacts/
 coverage/
 pnpm-lock.yaml
+
+# Hand-maintained spec — heavy table padding hurts diffs.
+REQUIREMENTS.md
