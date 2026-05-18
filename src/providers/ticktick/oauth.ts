@@ -95,14 +95,12 @@ export async function refresh(refreshToken: string): Promise<Result<OAuthTokens,
   const parsed = await postForm(TOKEN_URL, body);
   if (!parsed.ok) return parsed;
 
-  // Some providers omit the refresh_token on a refresh response and
-  // expect the caller to keep the previous one.
-  const tokens: OAuthTokens = {
-    accessToken: parsed.value.access_token,
-    refreshToken: parsed.value.refresh_token ?? refreshToken,
-    expiresAt: Date.now() + parsed.value.expires_in * 1000,
-    scope: parsed.value.scope,
-  };
+  // Carry forward the previous refresh_token if the refresh response
+  // omits one (some providers expect callers to reuse the old value).
+  const tokens = buildTokens({
+    ...parsed.value,
+    refresh_token: parsed.value.refresh_token ?? refreshToken,
+  });
   await setProviderState('ticktick', { tokens });
   return ok(tokens);
 }
@@ -119,6 +117,9 @@ export async function getValidTokens(): Promise<Result<OAuthTokens, string>> {
   const state = await getProviderState('ticktick');
   if (!state.tokens) return err('Not authenticated');
   if (state.tokens.expiresAt - Date.now() < 60_000) {
+    if (!state.tokens.refreshToken) {
+      return err('Access token expired and no refresh token — please re-authenticate.');
+    }
     return refresh(state.tokens.refreshToken);
   }
   return ok(state.tokens);
@@ -127,11 +128,16 @@ export async function getValidTokens(): Promise<Result<OAuthTokens, string>> {
 /**
  * Force a refresh regardless of expiry. Used by the api layer on a 401
  * response (a token may be invalidated before its `expires_in` ticks
- * down — server-side revocation, password change, etc.).
+ * down — server-side revocation, password change, etc.). Returns err
+ * when the provider doesn't issue refresh tokens (e.g. TickTick) — the
+ * caller should prompt re-authentication.
  */
 export async function forceRefresh(): Promise<Result<OAuthTokens, string>> {
   const state = await getProviderState('ticktick');
   if (!state.tokens) return err('Not authenticated');
+  if (!state.tokens.refreshToken) {
+    return err('No refresh token available — please re-authenticate.');
+  }
   return refresh(state.tokens.refreshToken);
 }
 
@@ -149,18 +155,29 @@ async function exchangeCodeForTokens(
   const parsed = await postForm(TOKEN_URL, body);
   if (!parsed.ok) return parsed;
 
-  return ok({
-    accessToken: parsed.value.access_token,
-    refreshToken: parsed.value.refresh_token,
-    expiresAt: Date.now() + parsed.value.expires_in * 1000,
-    scope: parsed.value.scope,
-  });
+  return ok(buildTokens(parsed.value));
+}
+
+// TickTick (and some other OAuth providers) don't issue refresh tokens
+// and may omit `expires_in`. We accept any response with at least an
+// access_token and fall back to a 180-day lifetime for missing
+// `expires_in` — that's TickTick's documented access-token lifetime.
+function buildTokens(r: TokenResponse): OAuthTokens {
+  const TICKTICK_DEFAULT_LIFETIME_SEC = 180 * 24 * 60 * 60;
+  const lifetimeSec =
+    typeof r.expires_in === 'number' ? r.expires_in : TICKTICK_DEFAULT_LIFETIME_SEC;
+  return {
+    accessToken: r.access_token,
+    refreshToken: r.refresh_token,
+    expiresAt: Date.now() + lifetimeSec * 1000,
+    scope: r.scope,
+  };
 }
 
 interface TokenResponse {
   access_token: string;
-  refresh_token: string;
-  expires_in: number;
+  refresh_token?: string;
+  expires_in?: number;
   scope?: string;
   token_type?: string;
 }
@@ -193,21 +210,18 @@ async function postForm(
   }
 
   if (!isTokenResponse(json)) {
-    return err(
-      'Token response missing required fields (access_token / refresh_token / expires_in)',
-    );
+    return err('Token response missing required field `access_token`');
   }
   return ok(json);
 }
 
+// We require only `access_token`. `refresh_token` and `expires_in` are
+// genuinely optional in the wild — TickTick, for instance, omits the
+// former and (in some responses) the latter. Missing values are
+// handled with sane defaults in `buildTokens`.
 function isTokenResponse(v: unknown): v is TokenResponse {
   if (typeof v !== 'object' || v === null) return false;
-  const o = v as Record<string, unknown>;
-  return (
-    typeof o.access_token === 'string' &&
-    typeof o.refresh_token === 'string' &&
-    typeof o.expires_in === 'number'
-  );
+  return typeof (v as Record<string, unknown>).access_token === 'string';
 }
 
 function generateNonce(): string {

@@ -34,7 +34,10 @@ export interface Task {
 
 export interface OAuthTokens {
   accessToken: string;
-  refreshToken: string;
+  // Optional — some providers (notably TickTick) don't issue a refresh
+  // token at all and instead grant long-lived access tokens. When
+  // missing, an expired access token forces full re-authentication.
+  refreshToken?: string;
   // Epoch ms. We refresh when (expiresAt - now) < 60_000.
   expiresAt: number;
   scope?: string;
