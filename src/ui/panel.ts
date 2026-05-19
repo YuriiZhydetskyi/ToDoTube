@@ -272,7 +272,7 @@ function formatDue(iso: string): { text: string; tone: DueTone } | null {
   const hasNoTime = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
 
   if (sameDay && hasNoTime) {
-    return { text: relativeToday(), tone: 'today-noTime' };
+    return { text: todayLabel(), tone: 'today-noTime' };
   }
   if (sameDay) {
     const tone: DueTone = d.getTime() < now.getTime() ? 'overdue' : 'today';
@@ -287,14 +287,11 @@ function formatDue(iso: string): { text: string; tone: DueTone } | null {
   return { text, tone };
 }
 
-// Returns the user-locale word for "today" (e.g. "сьогодні", "today",
-// "heute"). Falls back to "today" if Intl.RelativeTimeFormat is missing.
-function relativeToday(): string {
-  try {
-    return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(0, 'day');
-  } catch {
-    return 'today';
-  }
+// Label shown on the "no specific time today" pill. Kept in English
+// for consistency with the rest of the UI strings (`Connect TickTick`,
+// `Retry`, `You're done`, …) — the panel is not yet localized.
+function todayLabel(): string {
+  return 'Today';
 }
 
 // TickTick scale: 5 = high, 3 = medium, 1 = low, 0 = none. We map

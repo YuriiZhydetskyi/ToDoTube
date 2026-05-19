@@ -226,7 +226,7 @@
 
   /* ───── Checkbox ───────────────────────────────────────────────── */
   .tt-panel__checkbox {
-    @apply relative inline-flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center
+    @apply relative inline-flex h-5.5 w-5.5 shrink-0 cursor-pointer items-center justify-center
            rounded-full bg-transparent p-0
            focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
     border: 2px solid color-mix(in srgb, var(--tt-fg) 45%, transparent);
@@ -273,13 +273,16 @@
     background: var(--tt-pill-muted-bg);
     color: var(--tt-pill-muted-fg);
   }
+  /* "Today" label for date-only tasks — filled teal pill, slightly
+   * larger than the time-pills and small-caps so it reads as a label
+   * rather than as data. */
   .tt-panel__due[data-tone='today-noTime'] {
-    background: transparent;
-    padding-left: 4px;
-    padding-right: 4px;
-    color: var(--tt-fg-muted);
-    text-transform: lowercase;
-    letter-spacing: 0.02em;
+    background: var(--tt-brand-soft);
+    color: var(--tt-brand);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
   .tt-panel__due[data-tone='overdue'] {
     background: var(--tt-pill-warn-bg);
@@ -309,7 +312,7 @@
     @apply mb-2 flex items-center gap-3 py-4;
   }
   .tt-panel__skeleton-dot {
-    @apply h-[22px] w-[22px] shrink-0 animate-pulse rounded-full bg-tt-border-strong;
+    @apply h-5.5 w-5.5 shrink-0 animate-pulse rounded-full bg-tt-border-strong;
   }
   .tt-panel__skeleton-bar {
     @apply h-4 flex-1 animate-pulse rounded-tt-pill bg-tt-border;
