@@ -18,6 +18,18 @@
   --color-tt-accent: var(--tt-accent);
   --color-tt-accent-fg: var(--tt-accent-fg);
   --color-tt-accent-soft: var(--tt-accent-soft);
+
+  /* Brand / refined-teal — independent of YouTube's theme tokens so it
+   * keeps the same identity in light + dark. Used for completion fill,
+   * priority indicator, and hover affordances on the checkbox. */
+  --color-tt-brand: var(--tt-brand);
+  --color-tt-brand-soft: var(--tt-brand-soft);
+
+  /* Task-row affordances */
+  --color-tt-task-hover: var(--tt-task-hover);
+  --color-tt-priority-high: var(--tt-priority-high);
+  --color-tt-priority-med: var(--tt-priority-med);
+
   --color-tt-pill-ok-bg: var(--tt-pill-ok-bg);
   --color-tt-pill-ok-fg: var(--tt-pill-ok-fg);
   --color-tt-pill-warn-bg: var(--tt-pill-warn-bg);
@@ -36,4 +48,6 @@
   --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', monospace;
 
   --ease-tt: cubic-bezier(0.2, 0, 0, 1);
+
+  --shadow-tt-row-hover: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.06);
 }

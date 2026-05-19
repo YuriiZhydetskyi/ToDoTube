@@ -15,9 +15,17 @@
   --tt-accent: var(--yt-spec-call-to-action, #065fd4);
   --tt-accent-fg: var(--yt-spec-text-primary-inverse, #ffffff);
   --tt-accent-soft: color-mix(in srgb, var(--tt-accent) 12%, transparent);
-  /* Pills + error are static — YouTube has no semantic equivalents we
-   * can reuse reliably across themes. The color-mix() falls back to the
-   * static value in browsers without support. */
+
+  /* Brand — refined teal. Static so the identity is stable across
+   * YouTube's light + dark themes. */
+  --tt-brand: #0d8a72;
+  --tt-brand-soft: color-mix(in srgb, var(--tt-brand) 14%, transparent);
+
+  /* Task-row affordances */
+  --tt-task-hover: color-mix(in srgb, var(--tt-fg) 4%, transparent);
+  --tt-priority-high: #b45309;
+  --tt-priority-med: color-mix(in srgb, var(--tt-fg-muted) 60%, transparent);
+
   --tt-pill-ok-bg: color-mix(in srgb, #2e7d32 18%, transparent);
   --tt-pill-ok-fg: #2e7d32;
   --tt-pill-warn-bg: color-mix(in srgb, #92590b 18%, transparent);
@@ -29,10 +37,9 @@
 
   display: block;
   font-family: var(--font-sans);
+  font-feature-settings: 'ss01';
 }
 
-/* Endscreen overlay fills its host area and centers the panel
- * vertically; the right-rail variant flows normally. */
 :host([data-todotube-panel='endscreen']) {
   display: flex;
   flex-direction: column;
@@ -42,7 +49,7 @@
 
 @layer components {
   .tt-panel {
-    @apply rounded-tt-lg border border-tt-border bg-tt-bg p-5 text-xl leading-snug text-tt-fg;
+    @apply rounded-tt-lg border border-tt-border bg-tt-bg p-6 text-xl leading-snug text-tt-fg;
     margin: 0 0 16px 0;
   }
   :host([data-todotube-panel='endscreen']) .tt-panel {
@@ -58,49 +65,83 @@
     overflow-y: auto;
   }
 
-  /* Header — list picker + refresh button. Gets a subtle bottom border
-   * only when followed by a list of tasks (the .tt-panel__list class is
-   * the next sibling). */
+  /* ───── Header ─────────────────────────────────────────────────── */
+  /* Two-row flex: select + icon-buttons on row 1, caption on row 2
+   * (basis-full on the caption wraps it). Bottom border appears only
+   * when followed by content. */
   .tt-panel__header {
-    @apply mb-4 flex items-center gap-2;
+    @apply mb-5 flex flex-wrap items-center gap-x-2 gap-y-1;
   }
-  .tt-panel__header:has(+ .tt-panel__list) {
-    @apply border-b border-tt-border pb-3;
-  }
-  .tt-panel__caption {
-    @apply -mt-2 mb-4 text-lg text-tt-fg-muted;
+  .tt-panel__header:has(
+    + .tt-panel__list,
+    + .tt-panel__line,
+    + .tt-panel__line-muted,
+    + .tt-panel__error
+  ) {
+    @apply border-b border-tt-border pb-4;
   }
 
+  /* Native select styled as a typographic statement. Default arrow is
+   * hidden; we draw our own chevron via background-image. */
   .tt-panel__select {
-    @apply min-w-0 flex-1 cursor-pointer rounded-tt-md border border-tt-border bg-tt-bg
-           px-3 py-2 text-xl text-tt-fg
+    @apply min-w-0 flex-1 cursor-pointer rounded-tt-sm border-0 bg-transparent
+           py-1 pl-0 pr-7
+           text-3xl font-extrabold tracking-tight text-tt-fg
            transition-colors duration-150 ease-tt
-           hover:border-tt-border-strong
-           focus:outline-none focus-visible:border-tt-accent
-           focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+           hover:text-tt-brand
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23606060' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.25rem center;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  /* Hide the default option-list arrow in IE/Edge legacy. */
+  .tt-panel__select::-ms-expand {
+    display: none;
   }
 
+  .tt-panel__caption {
+    @apply basis-full text-xs font-medium uppercase text-tt-fg-muted;
+    letter-spacing: 0.08em;
+  }
+  .tt-panel__caption::before {
+    content: '';
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin-right: 8px;
+    margin-bottom: 2px;
+    border-radius: 999px;
+    background: var(--tt-brand);
+    vertical-align: middle;
+  }
+
+  /* ───── Header icon-buttons ────────────────────────────────────── */
+  .tt-panel__open,
   .tt-panel__refresh {
-    @apply inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-tt-md
-           border border-tt-border bg-tt-bg text-2xl text-tt-fg
+    @apply inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center
+           rounded-tt-md border border-tt-border bg-tt-bg text-tt-fg-muted
            transition-all duration-150 ease-tt
-           hover:rotate-90 hover:border-tt-accent hover:text-tt-accent
-           focus:outline-none focus-visible:border-tt-accent
-           focus-visible:ring-2 focus-visible:ring-tt-accent-soft
-           motion-reduce:hover:rotate-0;
-  }
-
-  .tt-panel__open {
-    @apply inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-tt-md
-           border border-tt-border bg-tt-bg text-2xl text-tt-fg
-           transition-colors duration-150 ease-tt
-           hover:border-tt-accent hover:text-tt-accent
+           hover:border-tt-brand hover:bg-tt-brand-soft hover:text-tt-brand
            focus:outline-none focus-visible:border-tt-accent
            focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
   }
+  .tt-panel__refresh:hover {
+    transform: rotate(90deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tt-panel__refresh:hover {
+      transform: none;
+    }
+  }
 
+  /* ───── Headings (no-header states) ────────────────────────────── */
   .tt-panel__heading {
-    @apply mb-3 text-2xl font-semibold tracking-tight text-tt-fg;
+    @apply mb-3 text-3xl font-extrabold tracking-tight text-tt-fg;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
   }
   .tt-panel__line {
     @apply mb-3 text-tt-fg;
@@ -109,32 +150,147 @@
     @apply mb-4 text-tt-fg-muted;
   }
 
-  /* Task list — list reset + per-row layout. */
+  /* ───── Task list ──────────────────────────────────────────────── */
   .tt-panel__list {
     @apply m-0 list-none p-0;
   }
+
   .tt-panel__task {
-    @apply -mx-2 flex items-center gap-3 rounded-tt-md px-2 py-3.5 text-tt-fg;
-    border-bottom: 1px solid var(--tt-border);
+    @apply relative -mx-3 flex items-center gap-3 rounded-tt-md px-3 py-4 text-tt-fg;
+    transition:
+      background-color 150ms var(--ease-tt),
+      box-shadow 150ms var(--ease-tt),
+      transform 150ms var(--ease-tt);
+    animation: tt-fade-up 320ms var(--ease-tt) backwards;
+    animation-delay: calc(var(--i, 0) * 40ms);
   }
-  .tt-panel__task:last-child {
-    border-bottom: 0;
+  /* Divider between rows — drawn on top of each subsequent row. Lives
+   * inside the row so a hovered card can hide its own + neighbour's
+   * divider for a cleaner visual lift. */
+  .tt-panel__task + .tt-panel__task::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 12px;
+    right: 12px;
+    height: 1px;
+    background: var(--tt-border);
+    pointer-events: none;
   }
-  .tt-panel__checkbox {
-    @apply inline-block h-6 w-6 shrink-0 cursor-pointer rounded-full border-2 border-tt-fg-muted
-           bg-transparent p-0 transition-colors duration-150 ease-tt
-           hover:border-tt-accent hover:bg-tt-accent-soft
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  .tt-panel__task:hover {
+    background: var(--tt-task-hover);
+    box-shadow: var(--shadow-tt-row-hover);
+    transform: translateY(-1px);
   }
-  .tt-panel__task-title {
-    @apply flex-1 truncate text-xl text-tt-fg;
-  }
-  .tt-panel__due {
-    @apply inline-flex shrink-0 items-center rounded-tt-pill bg-tt-pill-muted-bg px-2.5 py-1
-           text-base font-medium text-tt-pill-muted-fg;
+  .tt-panel__task:hover::after,
+  .tt-panel__task:hover + .tt-panel__task::after {
+    background: transparent;
   }
 
-  /* Buttons */
+  /* Priority bar — left edge accent for high/medium tasks. */
+  .tt-panel__task[data-priority]::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 14px;
+    bottom: 14px;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--tt-priority-med);
+  }
+  .tt-panel__task[data-priority='high']::before {
+    background: var(--tt-priority-high);
+  }
+
+  /* Completion — fade row out before unmount. */
+  .tt-panel__task--done {
+    opacity: 0;
+    transform: translateX(8px);
+    pointer-events: none;
+    transition:
+      opacity 220ms var(--ease-tt),
+      transform 220ms var(--ease-tt);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tt-panel__task {
+      animation: none;
+    }
+    .tt-panel__task:hover {
+      transform: none;
+    }
+    .tt-panel__task--done {
+      transition: opacity 1ms;
+    }
+  }
+
+  /* ───── Checkbox ───────────────────────────────────────────────── */
+  .tt-panel__checkbox {
+    @apply relative inline-flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center
+           rounded-full bg-transparent p-0
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+    border: 2px solid color-mix(in srgb, var(--tt-fg) 45%, transparent);
+    transition:
+      background-color 160ms var(--ease-tt),
+      border-color 160ms var(--ease-tt),
+      transform 120ms var(--ease-tt);
+  }
+  .tt-panel__checkbox:hover {
+    border-color: var(--tt-brand);
+    background-color: var(--tt-brand-soft);
+    transform: scale(1.06);
+  }
+  .tt-panel__checkbox:active {
+    transform: scale(0.92);
+  }
+  .tt-panel__checkbox--done {
+    background-color: var(--tt-brand);
+    border-color: var(--tt-brand);
+    color: #ffffff;
+  }
+  .tt-panel__checkbox--done > svg {
+    animation: tt-pop-in 220ms var(--ease-tt) backwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tt-panel__checkbox,
+    .tt-panel__checkbox:hover,
+    .tt-panel__checkbox:active {
+      transform: none;
+    }
+    .tt-panel__checkbox--done > svg {
+      animation: none;
+    }
+  }
+
+  /* ───── Task title + due pill ──────────────────────────────────── */
+  .tt-panel__task-title {
+    @apply min-w-0 flex-1 truncate text-xl font-medium tracking-tight text-tt-fg;
+  }
+
+  .tt-panel__due {
+    @apply inline-flex shrink-0 items-center rounded-tt-pill px-2.5 py-1 text-xs font-medium;
+    font-variant-numeric: tabular-nums;
+    background: var(--tt-pill-muted-bg);
+    color: var(--tt-pill-muted-fg);
+  }
+  .tt-panel__due[data-tone='today-noTime'] {
+    background: transparent;
+    padding-left: 4px;
+    padding-right: 4px;
+    color: var(--tt-fg-muted);
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+  }
+  .tt-panel__due[data-tone='overdue'] {
+    background: var(--tt-pill-warn-bg);
+    color: var(--tt-pill-warn-fg);
+  }
+  .tt-panel__due[data-tone='upcoming'] {
+    background: var(--tt-accent-soft);
+    color: var(--tt-accent);
+  }
+
+  /* ───── Buttons ────────────────────────────────────────────────── */
   .tt-panel__btn {
     @apply mt-4 inline-flex w-full cursor-pointer items-center justify-center rounded-tt-md
            border border-transparent bg-tt-accent px-4 py-3 text-xl font-medium text-tt-accent-fg
@@ -143,19 +299,43 @@
            focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
   }
 
-  /* Error state — top-tinted accent bar inside the panel card. */
+  /* ───── Error state ────────────────────────────────────────────── */
   .tt-panel__error {
     @apply mt-3 rounded-tt-md bg-tt-error-bg px-4 py-3 text-xl text-tt-error-fg;
   }
 
-  /* Loading skeleton — three quiet pulse rows. */
+  /* ───── Skeleton ───────────────────────────────────────────────── */
   .tt-panel__skeleton {
-    @apply mb-2 flex items-center gap-3 py-3.5;
+    @apply mb-2 flex items-center gap-3 py-4;
   }
   .tt-panel__skeleton-dot {
-    @apply h-6 w-6 shrink-0 animate-pulse rounded-full bg-tt-border-strong;
+    @apply h-[22px] w-[22px] shrink-0 animate-pulse rounded-full bg-tt-border-strong;
   }
   .tt-panel__skeleton-bar {
     @apply h-4 flex-1 animate-pulse rounded-tt-pill bg-tt-border;
+  }
+}
+
+@keyframes tt-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes tt-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }

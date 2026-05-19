@@ -10,6 +10,7 @@
 
 import panelCssText from '@/ui/styles/panel.css?inline';
 
+import { iconCheck, iconExternal, iconRefresh } from '@/ui/icons';
 import { isSynthetic, type ListId, type Project, type Task } from '@/shared/types';
 
 export const panelCss: string = panelCssText;
@@ -35,15 +36,20 @@ export type PanelState =
   | { kind: 'list'; tasks: Task[]; onComplete: (task: Task) => void; header?: PanelHeader }
   | { kind: 'error'; message: string; onRetry: () => void; header?: PanelHeader };
 
+// Milliseconds the row stays visible after a checkbox click before the
+// onComplete callback fires — long enough for the fade-out animation
+// to play, short enough not to feel laggy.
+const COMPLETION_ANIMATION_MS = 220;
+
 export function renderPanel(root: HTMLElement, state: PanelState): void {
   root.className = 'tt-panel';
   root.replaceChildren();
 
   if ('header' in state && state.header) {
-    root.appendChild(renderHeader(state.header));
-    if (isSynthetic(state.header.currentListId)) {
-      root.appendChild(caption('Due (≤ 2 days overdue) or starting today'));
-    }
+    const caption = isSynthetic(state.header.currentListId)
+      ? 'Due (≤ 2 days overdue) or starting today'
+      : undefined;
+    root.appendChild(renderHeader(state.header, caption));
   }
 
   switch (state.kind) {
@@ -76,9 +82,9 @@ export function renderPanel(root: HTMLElement, state: PanelState): void {
       }
       const ul = document.createElement('ul');
       ul.className = 'tt-panel__list';
-      for (const task of state.tasks) {
-        ul.appendChild(taskRow(task, () => state.onComplete(task)));
-      }
+      state.tasks.forEach((task, idx) => {
+        ul.appendChild(taskRow(task, idx, () => state.onComplete(task)));
+      });
       root.appendChild(ul);
       return;
     }
@@ -99,7 +105,7 @@ export function renderPanel(root: HTMLElement, state: PanelState): void {
 // can keep using either; both render the full panel into `root`.
 export const updatePanel = renderPanel;
 
-function renderHeader(header: PanelHeader): HTMLElement {
+function renderHeader(header: PanelHeader, caption: string | undefined): HTMLElement {
   const bar = document.createElement('div');
   bar.className = 'tt-panel__header';
 
@@ -109,6 +115,7 @@ function renderHeader(header: PanelHeader): HTMLElement {
   if (header.projects.length > 0) {
     const select = document.createElement('select');
     select.className = 'tt-panel__select';
+    select.setAttribute('aria-label', 'Task list');
     for (const p of header.projects) {
       const opt = document.createElement('option');
       opt.value = p.id;
@@ -119,7 +126,6 @@ function renderHeader(header: PanelHeader): HTMLElement {
     select.addEventListener('change', () => header.onListChange(select.value));
     bar.appendChild(select);
   } else {
-    // Spacer so the refresh button stays on the right while loading.
     const spacer = document.createElement('div');
     spacer.className = 'flex-1';
     bar.appendChild(spacer);
@@ -130,8 +136,7 @@ function renderHeader(header: PanelHeader): HTMLElement {
   open.className = 'tt-panel__open';
   open.setAttribute('aria-label', 'Open TickTick');
   open.title = 'Open TickTick';
-  // U+2197 NORTH EAST ARROW — universal "external link" hint.
-  open.textContent = '↗';
+  open.appendChild(iconExternal());
   open.addEventListener('click', () => {
     window.open(header.webAppUrl, '_blank', 'noopener,noreferrer');
   });
@@ -142,11 +147,16 @@ function renderHeader(header: PanelHeader): HTMLElement {
   refresh.className = 'tt-panel__refresh';
   refresh.setAttribute('aria-label', 'Refresh tasks');
   refresh.title = 'Refresh';
-  // U+21BB CLOCKWISE OPEN CIRCLE ARROW — universally rendered, no need
-  // to bundle an SVG sprite for one glyph.
-  refresh.textContent = '↻';
+  refresh.appendChild(iconRefresh());
   refresh.addEventListener('click', () => header.onRefresh());
   bar.appendChild(refresh);
+
+  if (caption) {
+    const cap = document.createElement('div');
+    cap.className = 'tt-panel__caption';
+    cap.textContent = caption;
+    bar.appendChild(cap);
+  }
 
   return bar;
 }
@@ -156,13 +166,6 @@ function heading(text: string): HTMLElement {
   h.className = 'tt-panel__heading';
   h.textContent = text;
   return h;
-}
-
-function caption(text: string): HTMLElement {
-  const c = document.createElement('div');
-  c.className = 'tt-panel__caption';
-  c.textContent = text;
-  return c;
 }
 
 function line(text: string, tone: 'default' | 'muted' = 'default'): HTMLElement {
@@ -181,16 +184,20 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
   return btn;
 }
 
-function taskRow(task: Task, onComplete: () => void): HTMLElement {
+function taskRow(task: Task, index: number, onComplete: () => void): HTMLElement {
   const li = document.createElement('li');
   li.className = 'tt-panel__task';
+  li.style.setProperty('--i', String(index));
+
+  const priorityTone = priorityToTone(task.priority);
+  if (priorityTone) li.setAttribute('data-priority', priorityTone);
 
   const checkbox = document.createElement('button');
   checkbox.type = 'button';
   checkbox.className = 'tt-panel__checkbox';
   checkbox.setAttribute('aria-label', `Complete: ${task.title}`);
   checkbox.title = 'Mark complete';
-  checkbox.addEventListener('click', () => onComplete());
+  checkbox.addEventListener('click', () => completeWithAnimation(li, checkbox, onComplete));
   li.appendChild(checkbox);
 
   const label = document.createElement('span');
@@ -198,14 +205,36 @@ function taskRow(task: Task, onComplete: () => void): HTMLElement {
   label.textContent = task.title;
   li.appendChild(label);
 
-  if (task.dueDate) {
-    const due = document.createElement('span');
-    due.className = 'tt-panel__due';
-    due.textContent = formatDueTime(task.dueDate);
-    li.appendChild(due);
+  const due = task.dueDate ? formatDue(task.dueDate) : null;
+  if (due) {
+    const badge = document.createElement('span');
+    badge.className = 'tt-panel__due';
+    badge.setAttribute('data-tone', due.tone);
+    badge.textContent = due.text;
+    li.appendChild(badge);
   }
 
   return li;
+}
+
+function completeWithAnimation(
+  row: HTMLElement,
+  checkbox: HTMLElement,
+  onComplete: () => void,
+): void {
+  // Fill the checkbox with the brand color + check mark, then fade the
+  // row out and hand off to the lifecycle. Reduced-motion users get the
+  // callback immediately without the transition.
+  checkbox.classList.add('tt-panel__checkbox--done');
+  checkbox.appendChild(iconCheck({ size: 14 }));
+
+  if (prefersReducedMotion()) {
+    onComplete();
+    return;
+  }
+
+  row.classList.add('tt-panel__task--done');
+  window.setTimeout(onComplete, COMPLETION_ANIMATION_MS);
 }
 
 function skeletonRows(count: number): HTMLElement {
@@ -226,18 +255,61 @@ function skeletonRows(count: number): HTMLElement {
   return wrap;
 }
 
-function formatDueTime(iso: string): string {
+type DueTone = 'today' | 'today-noTime' | 'overdue' | 'upcoming';
+
+function formatDue(iso: string): { text: string; tone: DueTone } | null {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  // If due is today (same local Y-M-D), show HH:mm. Otherwise show
-  // a short date.
+  if (Number.isNaN(d.getTime())) return null;
+
   const now = new Date();
-  if (
+  const sameDay =
     d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  ) {
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    d.getDate() === now.getDate();
+
+  // TickTick emits 00:00:00 for "all-day" tasks. Show a locale-aware
+  // "today"/"сьогодні" marker instead of a literal "00:00" pill.
+  const hasNoTime = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
+
+  if (sameDay && hasNoTime) {
+    return { text: relativeToday(), tone: 'today-noTime' };
   }
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (sameDay) {
+    const tone: DueTone = d.getTime() < now.getTime() ? 'overdue' : 'today';
+    return {
+      text: d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
+      tone,
+    };
+  }
+
+  const text = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const tone: DueTone = d.getTime() < now.getTime() ? 'overdue' : 'upcoming';
+  return { text, tone };
+}
+
+// Returns the user-locale word for "today" (e.g. "сьогодні", "today",
+// "heute"). Falls back to "today" if Intl.RelativeTimeFormat is missing.
+function relativeToday(): string {
+  try {
+    return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(0, 'day');
+  } catch {
+    return 'today';
+  }
+}
+
+// TickTick scale: 5 = high, 3 = medium, 1 = low, 0 = none. We map
+// "high" + "medium/low" to two visual tiers; none gets no indicator.
+function priorityToTone(priority: number | undefined): 'high' | 'med' | undefined {
+  if (priority === undefined) return undefined;
+  if (priority >= 5) return 'high';
+  if (priority >= 1) return 'med';
+  return undefined;
+}
+
+function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
 }
