@@ -79,6 +79,17 @@ YouTube selectors live in **exactly one place**: `src/surfaces/desktop-watch/sel
 - SPA-aware: re-renders on YouTube's pushState navigations.
 - Zero telemetry. The extension only talks to YouTube and TickTick.
 
+### How the Today smart list works
+
+The Today list is computed in the browser because TickTick's open API has no Today endpoint. A task is in Today (in your local timezone) if **either**:
+
+- its `dueDate` falls in the last 3 days (today, yesterday, or the day before yesterday) — this catches today's deadlines plus very-recent overdue, while keeping long-deferred items ("Later" projects with year-old dates) out; **OR**
+- its `startDate` is today — rescues tasks scheduled to start today that don't have a `dueDate` yet.
+
+We also explicitly fetch the Inbox project (`/project/inbox/data`) in addition to the project list, since TickTick's `/project` endpoint doesn't include it. The open-API response for Inbox is the same shape as a regular project's `data` payload minus the `project` wrapper — we tolerate that and read `tasks` directly.
+
+Tasks with no `dueDate` and no `startDate` won't be in Today — pick the project directly from the in-panel dropdown to see them.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

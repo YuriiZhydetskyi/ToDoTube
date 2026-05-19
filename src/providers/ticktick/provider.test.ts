@@ -90,6 +90,80 @@ describe('isDueBetween', () => {
   });
 });
 
+describe('Today filter (matches listTasksToday)', () => {
+  // The production filter ORs two windows:
+  //   - dueDate inside a rolling 3-day window (today + previous 2 days)
+  //   - startDate strictly on today
+  // These tests exercise both sides via the underlying `isDueBetween`
+  // helper, mirroring how `decideTodayInclusion` calls it. They pin the
+  // semantics so future refactors of `listTasksToday` can't drift —
+  // e.g. shrinking the dueDate window, or losing the startDate rescue.
+  const today = new Date(2026, 4, 18, 12, 0, 0);
+  const twoDaysAgo = new Date(today);
+  twoDaysAgo.setDate(today.getDate() - 2);
+  const windowStart = startOfLocalDay(twoDaysAgo);
+  const windowEnd = endOfLocalDay(today);
+  const dayStart = startOfLocalDay(today);
+  const dayEnd = windowEnd;
+
+  function at(year: number, month: number, day: number, hour = 12): string {
+    return new Date(year, month, day, hour).toISOString();
+  }
+
+  // dueDate window
+  it('dueDate today → included', () => {
+    expect(isDueBetween(at(2026, 4, 18), windowStart, windowEnd)).toBe(true);
+  });
+
+  it('dueDate yesterday → included', () => {
+    expect(isDueBetween(at(2026, 4, 17), windowStart, windowEnd)).toBe(true);
+  });
+
+  it('dueDate 2 days ago → included', () => {
+    expect(isDueBetween(at(2026, 4, 16), windowStart, windowEnd)).toBe(true);
+  });
+
+  it('dueDate 3 days ago → excluded', () => {
+    expect(isDueBetween(at(2026, 4, 15), windowStart, windowEnd)).toBe(false);
+  });
+
+  it('dueDate many months ago ("Later" case) → excluded', () => {
+    expect(isDueBetween('2025-10-12T22:00:00.000+0000', windowStart, windowEnd)).toBe(false);
+  });
+
+  it('dueDate tomorrow → excluded by window', () => {
+    expect(isDueBetween(at(2026, 4, 19), windowStart, windowEnd)).toBe(false);
+  });
+
+  it('dueDate at exact start-of-window boundary → included', () => {
+    expect(isDueBetween(windowStart.toISOString(), windowStart, windowEnd)).toBe(true);
+  });
+
+  it('dueDate at exact end-of-window boundary → included', () => {
+    expect(isDueBetween(windowEnd.toISOString(), windowStart, windowEnd)).toBe(true);
+  });
+
+  // startDate strict-today rescue
+  it('startDate today (no dueDate) → included via startDate', () => {
+    expect(isDueBetween(at(2026, 4, 18), dayStart, dayEnd)).toBe(true);
+  });
+
+  it('startDate today + dueDate tomorrow → included via startDate', () => {
+    // dueDate=tomorrow fails the window…
+    expect(isDueBetween(at(2026, 4, 19), windowStart, windowEnd)).toBe(false);
+    // …but startDate=today rescues.
+    expect(isDueBetween(at(2026, 4, 18), dayStart, dayEnd)).toBe(true);
+  });
+
+  it('startDate yesterday → NOT rescued (strict-today on startDate)', () => {
+    expect(isDueBetween(at(2026, 4, 17), dayStart, dayEnd)).toBe(false);
+  });
+
+  it('startDate tomorrow → NOT rescued', () => {
+    expect(isDueBetween(at(2026, 4, 19), dayStart, dayEnd)).toBe(false);
+  });
+});
+
 describe('isDueByEndOfDay', () => {
   const end = endOfLocalDay(new Date(2026, 4, 18));
 

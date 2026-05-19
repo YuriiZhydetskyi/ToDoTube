@@ -2,7 +2,7 @@
 // canonical task list; this file is a render-only function over a typed
 // state value, plus `updatePanel(root, state)` for in-place re-renders.
 
-import type { ListId, Project, Task } from '@/shared/types';
+import { isSynthetic, type ListId, type Project, type Task } from '@/shared/types';
 
 // Optional header rendered above the task body — list picker on the
 // left, refresh button on the right. The lifecycle passes this only
@@ -55,6 +55,9 @@ function render(root: HTMLElement, state: PanelState): void {
 
   if ('header' in state && state.header) {
     root.appendChild(renderHeader(state.header));
+    if (isSynthetic(state.header.currentListId)) {
+      root.appendChild(caption('Due (≤ 2 days overdue) or starting today'));
+    }
   }
 
   switch (state.kind) {
@@ -179,6 +182,18 @@ function heading(text: string): HTMLElement {
   h.textContent = text;
   h.style.cssText = `${RESET} font-weight: 600; font-size: 16px; margin: 0 0 8px 0;`;
   return h;
+}
+
+function caption(text: string): HTMLElement {
+  const c = document.createElement('div');
+  c.textContent = text;
+  c.style.cssText = `
+    ${RESET}
+    font-size: 12px;
+    color: var(--yt-spec-text-secondary, #606060);
+    margin: -4px 0 12px 0;
+  `;
+  return c;
 }
 
 function line(text: string): HTMLElement {

@@ -31,7 +31,11 @@ export interface TickTickTask {
 }
 
 export interface ProjectData {
-  project: TickTickProject;
+  // Optional — TickTick's open API returns regular projects with a
+  // `project` wrapper, but `/project/inbox/data` returns just `{ tasks
+  // }` without one. We don't read this field anywhere, so we tolerate
+  // its absence.
+  project?: TickTickProject;
   tasks: TickTickTask[];
 }
 
@@ -121,7 +125,9 @@ function isTickTickTask(v: unknown): v is TickTickTask {
 function isProjectData(v: unknown): v is ProjectData {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
-  if (!o.project || !isTickTickProject(o.project)) return false;
+  // `project` is optional — see ProjectData. If present, it must match
+  // the project shape; if absent, that's fine.
+  if (o.project !== undefined && !isTickTickProject(o.project)) return false;
   if (!Array.isArray(o.tasks)) return false;
   return o.tasks.every(isTickTickTask);
 }
