@@ -74,13 +74,44 @@ export function mountRightRail(opts: MountOptions): MountHandle {
   }
   parent.insertBefore(host, slot);
 
+  // Keep the panel visible while scrolling through comments. `position:
+  // sticky` only sticks within its parent's box, so applying it to our
+  // host alone fails — YouTube's right column (#secondary) is shorter
+  // than the comments column on the left. Apply sticky to #secondary
+  // itself instead: its parent is ytd-watch-flexy, which spans the full
+  // page height, so the whole right column (and our panel inside it)
+  // stays pinned as the user scrolls. 72px = masthead (~56px) + gap.
+  const secondary = host.closest<HTMLElement>('#secondary');
+  const stickyCleanup = secondary ? applySticky(secondary) : null;
+
   return {
     root,
     strategyIndex: result.strategyIndex,
     unmount: () => {
+      stickyCleanup?.();
       host.remove();
       slot.style.display = originalDisplay;
     },
+  };
+}
+
+interface StickyCleanup {
+  (): void;
+}
+
+function applySticky(el: HTMLElement): StickyCleanup {
+  const prev = {
+    position: el.style.position,
+    top: el.style.top,
+    alignSelf: el.style.alignSelf,
+  };
+  el.style.position = 'sticky';
+  el.style.top = '72px';
+  el.style.alignSelf = 'flex-start';
+  return () => {
+    el.style.position = prev.position;
+    el.style.top = prev.top;
+    el.style.alignSelf = prev.alignSelf;
   };
 }
 

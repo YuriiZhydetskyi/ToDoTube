@@ -50,6 +50,13 @@
     margin: auto;
     width: 92%;
   }
+  /* Right-rail variant: panel sticks to viewport (positioning lives on
+   * the page-side host element), so cap its height and scroll internally
+   * to avoid being cut off on long task lists. */
+  :host([data-todotube-panel='rightRail']) .tt-panel {
+    max-height: calc(100vh - 88px);
+    overflow-y: auto;
+  }
 
   /* Header — list picker + refresh button. Gets a subtle bottom border
    * only when followed by a list of tasks (the .tt-panel__list class is
@@ -83,6 +90,15 @@
            motion-reduce:hover:rotate-0;
   }
 
+  .tt-panel__open {
+    @apply inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-tt-md
+           border border-tt-border bg-tt-bg text-2xl text-tt-fg
+           transition-colors duration-150 ease-tt
+           hover:border-tt-accent hover:text-tt-accent
+           focus:outline-none focus-visible:border-tt-accent
+           focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
+
   .tt-panel__heading {
     @apply mb-3 text-2xl font-semibold tracking-tight text-tt-fg;
   }
@@ -98,21 +114,17 @@
     @apply m-0 list-none p-0;
   }
   .tt-panel__task {
-    @apply -mx-2 flex cursor-pointer items-center gap-3 rounded-tt-md px-2 py-3.5
-           text-tt-fg transition-colors duration-150 ease-tt
-           hover:bg-tt-accent-soft
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+    @apply -mx-2 flex items-center gap-3 rounded-tt-md px-2 py-3.5 text-tt-fg;
     border-bottom: 1px solid var(--tt-border);
   }
   .tt-panel__task:last-child {
     border-bottom: 0;
   }
   .tt-panel__checkbox {
-    @apply inline-block h-6 w-6 shrink-0 rounded-full border-2 border-tt-fg-muted
-           transition-colors duration-150 ease-tt;
-  }
-  .tt-panel__task:hover .tt-panel__checkbox {
-    @apply border-tt-accent;
+    @apply inline-block h-6 w-6 shrink-0 cursor-pointer rounded-full border-2 border-tt-fg-muted
+           bg-transparent p-0 transition-colors duration-150 ease-tt
+           hover:border-tt-accent hover:bg-tt-accent-soft
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
   }
   .tt-panel__task-title {
     @apply flex-1 truncate text-xl text-tt-fg;

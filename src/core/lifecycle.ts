@@ -12,6 +12,7 @@
 
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
+import { WEB_APP_URL as TICKTICK_WEB_APP_URL } from '@/providers/ticktick/config';
 import { log, setVerbose } from '@/shared/logger';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
 import type { ListId, Project, ProviderId, Task } from '@/shared/types';
@@ -319,12 +320,20 @@ function buildHeader(state: State): PanelHeader | undefined {
   return {
     projects: state.projects,
     currentListId: state.listId,
+    webAppUrl: webAppUrlFor(state.providerId),
     onListChange: (listId) => void onListPicked(state, listId),
     onRefresh: () => {
       void loadProjects(state);
       void fetchTasks(state);
     },
   };
+}
+
+function webAppUrlFor(providerId: ProviderId): string {
+  switch (providerId) {
+    case 'ticktick':
+      return TICKTICK_WEB_APP_URL;
+  }
 }
 
 async function onConnectClick(state: State): Promise<void> {

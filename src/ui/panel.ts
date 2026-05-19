@@ -21,6 +21,8 @@ export const panelCss: string = panelCssText;
 export interface PanelHeader {
   projects: Project[];
   currentListId: ListId;
+  /** External URL opened by the header's "Open <provider>" button. */
+  webAppUrl: string;
   onListChange: (listId: ListId) => void;
   onRefresh: () => void;
 }
@@ -123,6 +125,18 @@ function renderHeader(header: PanelHeader): HTMLElement {
     bar.appendChild(spacer);
   }
 
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'tt-panel__open';
+  open.setAttribute('aria-label', 'Open TickTick');
+  open.title = 'Open TickTick';
+  // U+2197 NORTH EAST ARROW — universal "external link" hint.
+  open.textContent = '↗';
+  open.addEventListener('click', () => {
+    window.open(header.webAppUrl, '_blank', 'noopener,noreferrer');
+  });
+  bar.appendChild(open);
+
   const refresh = document.createElement('button');
   refresh.type = 'button';
   refresh.className = 'tt-panel__refresh';
@@ -170,20 +184,13 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
 function taskRow(task: Task, onComplete: () => void): HTMLElement {
   const li = document.createElement('li');
   li.className = 'tt-panel__task';
-  li.tabIndex = 0;
-  li.setAttribute('role', 'button');
-  li.setAttribute('aria-label', `Complete: ${task.title}`);
-  li.addEventListener('click', () => onComplete());
-  li.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onComplete();
-    }
-  });
 
-  const checkbox = document.createElement('span');
+  const checkbox = document.createElement('button');
+  checkbox.type = 'button';
   checkbox.className = 'tt-panel__checkbox';
-  checkbox.setAttribute('aria-hidden', 'true');
+  checkbox.setAttribute('aria-label', `Complete: ${task.title}`);
+  checkbox.title = 'Mark complete';
+  checkbox.addEventListener('click', () => onComplete());
   li.appendChild(checkbox);
 
   const label = document.createElement('span');

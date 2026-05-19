@@ -19,6 +19,7 @@ export const CLIENT_SECRET: string = import.meta.env.WXT_TT_CLIENT_SECRET ?? '';
 export const AUTHORIZE_URL = 'https://ticktick.com/oauth/authorize';
 export const TOKEN_URL = 'https://ticktick.com/oauth/token';
 export const API_BASE = 'https://api.ticktick.com';
+export const WEB_APP_URL = 'https://ticktick.com/webapp/';
 
 // `tasks:write` is required for click-to-complete. Space-separated per
 // the OAuth2 spec.
