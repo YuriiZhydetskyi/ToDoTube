@@ -1,0 +1,116 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* The popup uses the same token shape as the settings page; we keep the
+ * file separate so the popup bundle only ships utilities it actually
+ * uses. */
+
+:root {
+  --tt-bg: #ffffff;
+  --tt-bg-elevated: #ffffff;
+  --tt-fg: #0f0f0f;
+  --tt-fg-muted: #606060;
+  --tt-border: rgba(0, 0, 0, 0.08);
+  --tt-border-strong: rgba(0, 0, 0, 0.16);
+  --tt-accent: #065fd4;
+  --tt-accent-fg: #ffffff;
+  --tt-accent-soft: rgba(6, 95, 212, 0.08);
+  --tt-pill-ok-bg: #e6f4ea;
+  --tt-pill-ok-fg: #146c2e;
+  --tt-pill-warn-bg: #fef7e0;
+  --tt-pill-warn-fg: #92590b;
+  --tt-pill-muted-bg: #eeeeee;
+  --tt-pill-muted-fg: #555555;
+  --tt-error-fg: #b00020;
+  --tt-error-bg: rgba(176, 0, 32, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tt-bg: #0f0f0f;
+    --tt-bg-elevated: #181818;
+    --tt-fg: #ffffff;
+    --tt-fg-muted: #aaaaaa;
+    --tt-border: rgba(255, 255, 255, 0.08);
+    --tt-border-strong: rgba(255, 255, 255, 0.16);
+    --tt-accent: #3ea6ff;
+    --tt-accent-fg: #0f0f0f;
+    --tt-accent-soft: rgba(62, 166, 255, 0.12);
+    --tt-pill-ok-bg: rgba(46, 125, 50, 0.2);
+    --tt-pill-ok-fg: #81c784;
+    --tt-pill-warn-bg: rgba(146, 89, 11, 0.2);
+    --tt-pill-warn-fg: #ffb74d;
+    --tt-pill-muted-bg: rgba(255, 255, 255, 0.08);
+    --tt-pill-muted-fg: #bbbbbb;
+    --tt-error-fg: #ff6679;
+    --tt-error-bg: rgba(255, 102, 121, 0.1);
+  }
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--tt-bg);
+    color: var(--tt-fg);
+    font-family: var(--font-sans);
+    font-size: 19px;
+    line-height: 1.45;
+  }
+}
+
+@layer components {
+  .tt-popup {
+    @apply flex min-w-65 flex-col gap-4 p-4;
+  }
+  .tt-popup__title {
+    @apply flex items-center gap-2 text-lg font-semibold tracking-tight text-tt-fg;
+  }
+  .tt-popup__dot {
+    @apply inline-block h-2 w-2 rounded-full bg-tt-accent;
+  }
+  .tt-popup__row {
+    @apply flex items-center justify-between gap-3;
+  }
+  .tt-popup__row-label {
+    @apply text-tt-fg;
+  }
+  .tt-popup__status {
+    @apply flex min-h-[1.5em] flex-col gap-0.5 text-xs;
+  }
+  .tt-popup__status-primary {
+    @apply text-tt-fg;
+  }
+  .tt-popup__status-secondary {
+    @apply text-tt-fg-muted;
+  }
+  .tt-popup__btn {
+    @apply mt-1 inline-flex w-full cursor-pointer items-center justify-center rounded-tt-sm
+           border border-tt-border-strong bg-tt-bg px-2.5 py-1.5 text-xs font-medium text-tt-fg
+           transition-colors duration-150
+           hover:border-tt-accent
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
+
+  /* iOS-style switch: visually-hidden checkbox with peer-checked utilities
+   * drives a styled track + knob. Single source of truth: the underlying
+   * <input>'s checked state. */
+  .tt-toggle {
+    @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center;
+  }
+  /* Note: `peer` is a marker class for sibling-state targeting and must
+   * appear directly on the element in markup — it can't be @applied. */
+  .tt-toggle__input {
+    @apply absolute h-0 w-0 cursor-pointer opacity-0;
+  }
+  .tt-toggle__track {
+    @apply h-5 w-9 rounded-tt-pill bg-tt-pill-muted-bg
+           transition-colors duration-200 ease-tt
+           peer-checked:bg-tt-accent
+           peer-focus-visible:ring-2 peer-focus-visible:ring-tt-accent-soft;
+  }
+  .tt-toggle__knob {
+    @apply pointer-events-none absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white
+           shadow-sm transition-transform duration-200 ease-tt
+           peer-checked:translate-x-4;
+  }
+}

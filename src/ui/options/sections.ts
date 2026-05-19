@@ -20,21 +20,21 @@ export async function renderAccountSection(
   settings: Settings,
 ): Promise<void> {
   container.replaceChildren();
-  container.append(el('h2', { text: 'Account' }));
+  container.append(el('h2', { class: 'tt-card__title', text: 'Account' }));
 
   const state = await sendToBackground({ type: 'GET_STATE' });
   const authenticated = state.ok && state.value.authenticated;
 
   // ----- TickTick row -----
-  const tickRow = el('div', { class: 'provider-row' });
+  const tickRow = el('div', { class: 'tt-provider' });
   tickRow.append(
-    el('div', { class: 'provider-name' }, 'TickTick'),
+    el('div', { class: 'tt-provider__name' }, 'TickTick'),
     authenticated ? pill('Connected', 'ok') : pill('Not connected', 'muted'),
   );
 
   const button = el('button', {
     text: authenticated ? 'Disconnect' : 'Connect TickTick',
-    class: authenticated ? 'btn btn-secondary' : 'btn btn-primary',
+    class: authenticated ? 'tt-btn tt-btn--secondary' : 'tt-btn tt-btn--primary',
   });
   button.addEventListener('click', async () => {
     button.disabled = true;
@@ -43,7 +43,7 @@ export async function renderAccountSection(
     } else {
       const r = await sendToBackground({ type: 'AUTH_START', providerId: PROVIDER_ID });
       if (!r.ok) {
-        container.append(el('div', { class: 'error', text: `Could not connect: ${r.error}` }));
+        container.append(el('div', { class: 'tt-error', text: `Could not connect: ${r.error}` }));
       }
     }
     void renderAccountSection(container, settings);
@@ -59,7 +59,7 @@ export async function renderAccountSection(
     providerId: PROVIDER_ID,
   });
   if (!projectsRes.ok) {
-    container.append(el('div', { class: 'error', text: projectsRes.error }));
+    container.append(el('div', { class: 'tt-error', text: projectsRes.error }));
     return;
   }
   const projects = projectsRes.value;
@@ -67,7 +67,7 @@ export async function renderAccountSection(
   const providerState = await getProviderState(PROVIDER_ID);
   const activeListId = providerState.activeListId ?? 'smart:today';
 
-  const select = el('select', { class: 'select' }) as HTMLSelectElement;
+  const select = el('select', { class: 'tt-select' }) as HTMLSelectElement;
   for (const p of projects) {
     const opt = el('option', { value: p.id, text: p.synthetic ? `${p.name} (smart)` : p.name });
     opt.selected = p.id === activeListId;
@@ -81,7 +81,7 @@ export async function renderAccountSection(
 
 export function renderDisplaySection(container: HTMLElement, settings: Settings): void {
   container.replaceChildren();
-  container.append(el('h2', { text: 'Display' }));
+  container.append(el('h2', { class: 'tt-card__title', text: 'Display' }));
 
   container.append(
     row(
@@ -129,7 +129,7 @@ export function renderDisplaySection(container: HTMLElement, settings: Settings)
 
 export function renderBehaviorSection(container: HTMLElement, settings: Settings): void {
   container.replaceChildren();
-  container.append(el('h2', { text: 'Behavior' }));
+  container.append(el('h2', { class: 'tt-card__title', text: 'Behavior' }));
 
   container.append(
     row(
@@ -162,7 +162,7 @@ export function renderBehaviorSection(container: HTMLElement, settings: Settings
 export function renderAdvancedSection(container: HTMLElement, settings: Settings): void {
   container.replaceChildren();
   const summary = el('summary', { text: 'Advanced' });
-  const details = el('details', { class: 'advanced' });
+  const details = el('details', { class: 'tt-advanced' });
   details.append(summary);
 
   details.append(
@@ -179,14 +179,17 @@ export function renderAdvancedSection(container: HTMLElement, settings: Settings
   );
 
   // Selector override editor
-  const overrideArea = el('textarea', { class: 'json-editor' }) as HTMLTextAreaElement;
+  const overrideArea = el('textarea', { class: 'tt-json' }) as HTMLTextAreaElement;
   overrideArea.value = settings.selectorsOverride ?? '';
   overrideArea.placeholder = '{\n  "rightRail": { "strategies": ["#some-selector"] }\n}';
   overrideArea.rows = 6;
 
-  const overrideStatus = el('div', { class: 'override-status' });
+  const overrideStatus = el('div', { class: 'tt-advanced__status' });
 
-  const overrideSave = el('button', { text: 'Save override', class: 'btn btn-secondary' });
+  const overrideSave = el('button', {
+    text: 'Save override',
+    class: 'tt-btn tt-btn--secondary',
+  });
   overrideSave.addEventListener('click', () => {
     const raw = overrideArea.value.trim();
     if (raw.length === 0) {
@@ -207,14 +210,14 @@ export function renderAdvancedSection(container: HTMLElement, settings: Settings
   details.append(
     el(
       'label',
-      { class: 'row row-vertical' },
+      { class: 'tt-row tt-row--vertical' },
       el(
         'span',
-        { class: 'row-label' },
+        { class: 'tt-row__label' },
         'Override selectors',
         el(
           'span',
-          { class: 'row-help' },
+          { class: 'tt-row__help' },
           'Paste a JSON object in the same shape as the bundled selectors. ',
           'See docs/SELECTORS.md.',
         ),
@@ -228,14 +231,17 @@ export function renderAdvancedSection(container: HTMLElement, settings: Settings
   // Force actions
   const forceAuthBtn = el('button', {
     text: 'Force re-authentication',
-    class: 'btn btn-secondary',
+    class: 'tt-btn tt-btn--secondary',
   });
   forceAuthBtn.addEventListener('click', async () => {
     await sendToBackground({ type: 'AUTH_DISCONNECT', providerId: PROVIDER_ID });
     await sendToBackground({ type: 'AUTH_START', providerId: PROVIDER_ID });
   });
 
-  const forceSyncBtn = el('button', { text: 'Refresh now', class: 'btn btn-secondary' });
+  const forceSyncBtn = el('button', {
+    text: 'Refresh now',
+    class: 'tt-btn tt-btn--secondary',
+  });
   forceSyncBtn.addEventListener('click', async () => {
     const ps = await getProviderState(PROVIDER_ID);
     await sendToBackground({
@@ -245,10 +251,13 @@ export function renderAdvancedSection(container: HTMLElement, settings: Settings
     });
   });
 
-  details.append(el('div', { class: 'button-row' }, forceAuthBtn, forceSyncBtn));
+  details.append(el('div', { class: 'tt-btn-row' }, forceAuthBtn, forceSyncBtn));
 
   // Export / import
-  const exportBtn = el('button', { text: 'Export settings JSON', class: 'btn btn-secondary' });
+  const exportBtn = el('button', {
+    text: 'Export settings JSON',
+    class: 'tt-btn tt-btn--secondary',
+  });
   exportBtn.addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -274,37 +283,40 @@ export function renderAdvancedSection(container: HTMLElement, settings: Settings
     }
   });
 
-  details.append(el('div', { class: 'button-row' }, exportBtn, importInput));
+  details.append(el('div', { class: 'tt-btn-row' }, exportBtn, importInput));
 
   container.append(details);
 }
 
 export function renderAboutSection(container: HTMLElement): void {
   container.replaceChildren();
-  container.append(el('h2', { text: 'About' }));
+  container.append(el('h2', { class: 'tt-card__title', text: 'About' }));
 
-  const version = el('div', { class: 'about-version', text: 'ToDoTube — alpha' });
+  const version = el('div', { class: 'mb-3 text-tt-fg-muted', text: 'ToDoTube — alpha' });
   const links = el(
     'div',
-    { class: 'about-links' },
+    { class: 'tt-about-links' },
     link('Source & issues', 'https://github.com/'),
     link('Spec (REQUIREMENTS.md)', 'https://github.com/'),
     link('Selector docs', 'https://github.com/'),
-  );
-  const reportLink = link(
-    'Report a DOM breakage',
-    `https://github.com/new/issues?` +
-      new URLSearchParams({
-        title: 'YouTube DOM change',
-        body: `User agent: ${navigator.userAgent}\nURL pattern: youtube.com/watch\n\n[Paste outerHTML of the affected element here]`,
-      }).toString(),
+    link(
+      'Report a DOM breakage',
+      `https://github.com/new/issues?` +
+        new URLSearchParams({
+          title: 'YouTube DOM change',
+          body: `User agent: ${navigator.userAgent}\nURL pattern: youtube.com/watch\n\n[Paste outerHTML of the affected element here]`,
+        }).toString(),
+    ),
   );
 
-  container.append(version, links, reportLink);
+  container.append(version, links);
 }
 
 function checkbox(initial: boolean, onChange: (v: boolean) => void): HTMLInputElement {
-  const cb = el('input', { type: 'checkbox' }) as HTMLInputElement;
+  const cb = el('input', {
+    type: 'checkbox',
+    class: 'h-4 w-4 cursor-pointer accent-tt-accent',
+  }) as HTMLInputElement;
   cb.checked = initial;
   cb.addEventListener('change', () => onChange(cb.checked));
   return cb;
@@ -318,7 +330,7 @@ function numberInput(
 ): HTMLInputElement {
   const input = el('input', {
     type: 'number',
-    class: 'input',
+    class: 'tt-input',
     min: String(min),
     max: String(max),
   }) as HTMLInputElement;
@@ -335,7 +347,7 @@ function enumSelect(
   options: ReadonlyArray<readonly [value: string, label: string]>,
   onChange: (v: string) => void,
 ): HTMLSelectElement {
-  const select = el('select', { class: 'select' }) as HTMLSelectElement;
+  const select = el('select', { class: 'tt-select' }) as HTMLSelectElement;
   for (const [value, label] of options) {
     const opt = el('option', { value, text: label });
     if (value === initial) opt.selected = true;
@@ -346,5 +358,5 @@ function enumSelect(
 }
 
 function link(label: string, href: string): HTMLAnchorElement {
-  return el('a', { href, target: '_blank', rel: 'noopener', text: label, class: 'link' });
+  return el('a', { href, target: '_blank', rel: 'noopener', text: label, class: 'tt-link' });
 }

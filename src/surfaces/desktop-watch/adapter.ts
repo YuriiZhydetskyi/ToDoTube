@@ -1,12 +1,16 @@
 // Adapter — knows how to mount our panel into specific spots on the
 // YouTube watch page. The only API the rest of the codebase uses:
 //
-//   mountRightRail(panel)   -> MountHandle
-//   mountEndscreen(panel)   -> MountHandle
+//   mountRightRail(opts)   -> MountHandle
+//   mountEndscreen(opts)   -> MountHandle
 //
-// Each returns an `unmount()` for cleanup. Mount fails by throwing a
-// typed SelectorMissError that core/lifecycle.ts catches and treats as
-// "leave YouTube alone."
+// Each returns an `unmount()` for cleanup plus `root`, the render-target
+// element (inside a shadow root) the lifecycle hands to renderPanel.
+// `opts.cssText` is the compiled stylesheet to inject into the shadow
+// root — the caller (lifecycle, in `core/`) owns this string, which
+// keeps the surfaces layer free of UI dependencies.
+// Mount fails by throwing a typed SelectorMissError that
+// core/lifecycle.ts catches and treats as "leave YouTube alone."
 
 import { resolve } from './resolver';
 import { selectors, type AnchorName } from './selectors';
@@ -19,18 +23,47 @@ export class SelectorMissError extends Error {
 }
 
 export interface MountHandle {
-  unmount: () => void;
+  readonly root: HTMLElement;
   readonly strategyIndex: number;
+  unmount: () => void;
+}
+
+export interface MountOptions {
+  /** Compiled stylesheet to inject into the panel's shadow root. */
+  cssText: string;
 }
 
 const PANEL_ATTR = 'data-todotube-panel';
 
-export function mountRightRail(panel: HTMLElement): MountHandle {
+function createHost(
+  kind: 'rightRail' | 'endscreen',
+  cssText: string,
+): { host: HTMLElement; root: HTMLElement } {
+  const host = document.createElement('div');
+  host.setAttribute(PANEL_ATTR, kind);
+  // Reset the host's own box so YouTube's stylesheets (which target
+  // ancestors) leak in as little as possible. The shadow root underneath
+  // is fully isolated; this just keeps the host's outer layout sane.
+  host.style.all = 'initial';
+  host.style.display = 'block';
+  host.style.boxSizing = 'border-box';
+
+  const shadow = host.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent = cssText;
+  shadow.appendChild(style);
+
+  const root = document.createElement('div');
+  shadow.appendChild(root);
+  return { host, root };
+}
+
+export function mountRightRail(opts: MountOptions): MountHandle {
   const result = resolve(selectors.rightRail);
   if (!result) throw new SelectorMissError('rightRail');
 
   const slot = result.element as HTMLElement;
-  panel.setAttribute(PANEL_ATTR, 'rightRail');
+  const { host, root } = createHost('rightRail', opts.cssText);
 
   const originalDisplay = slot.style.display;
   slot.style.display = 'none';
@@ -39,45 +72,48 @@ export function mountRightRail(panel: HTMLElement): MountHandle {
     slot.style.display = originalDisplay;
     throw new SelectorMissError('rightRail');
   }
-  parent.insertBefore(panel, slot);
+  parent.insertBefore(host, slot);
 
   return {
+    root,
     strategyIndex: result.strategyIndex,
     unmount: () => {
-      panel.remove();
+      host.remove();
       slot.style.display = originalDisplay;
     },
   };
 }
 
-export function mountEndscreen(panel: HTMLElement): MountHandle {
+export function mountEndscreen(opts: MountOptions): MountHandle {
   const result = resolve(selectors.endscreenContainer);
   if (!result) throw new SelectorMissError('endscreenContainer');
 
   const slot = result.element as HTMLElement;
-  panel.setAttribute(PANEL_ATTR, 'endscreen');
+  const { host, root } = createHost('endscreen', opts.cssText);
 
-  // Cover the player area entirely with our panel.
-  panel.style.position = 'absolute';
-  panel.style.inset = '0';
-  panel.style.zIndex = '60';
-  panel.style.pointerEvents = 'auto';
+  // Cover the player area entirely — positioning lives on the host
+  // element so the shadow root content can flow normally inside.
+  host.style.position = 'absolute';
+  host.style.inset = '0';
+  host.style.zIndex = '60';
+  host.style.pointerEvents = 'auto';
 
   const originalVisibility = slot.style.visibility;
   slot.style.visibility = 'hidden';
 
   const player = slot.closest<HTMLElement>('#movie_player, .html5-video-player');
-  const host = player ?? slot.parentElement;
-  if (!host) {
+  const hostParent = player ?? slot.parentElement;
+  if (!hostParent) {
     slot.style.visibility = originalVisibility;
     throw new SelectorMissError('endscreenContainer');
   }
-  host.appendChild(panel);
+  hostParent.appendChild(host);
 
   return {
+    root,
     strategyIndex: result.strategyIndex,
     unmount: () => {
-      panel.remove();
+      host.remove();
       slot.style.visibility = originalVisibility;
     },
   };

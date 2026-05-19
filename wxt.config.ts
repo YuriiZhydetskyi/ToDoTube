@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
 
 // See https://wxt.dev/api/config.html
@@ -9,6 +10,9 @@ import { defineConfig } from 'wxt';
 // lives at `src/<layer>/`.
 export default defineConfig({
   srcDir: 'src',
+  vite: () => ({
+    plugins: [tailwindcss()],
+  }),
   // Firefox MV3 is opt-in in WXT 0.20 — explicit so both builds match.
   manifestVersion: 3,
   // We collect zero data (see REQUIREMENTS.md §8). The Firefox-MV3

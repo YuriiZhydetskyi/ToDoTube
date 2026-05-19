@@ -22,7 +22,7 @@ import {
   type MountHandle,
 } from '@/surfaces/desktop-watch/adapter';
 import { onEndscreenReady, type EndscreenTrigger } from '@/surfaces/desktop-watch/triggers';
-import { createPanel, updatePanel, type PanelHeader, type PanelState } from '@/ui/panel';
+import { panelCss, renderPanel, type PanelHeader, type PanelState } from '@/ui/panel';
 
 const WATCH_PATH = '/watch';
 const REMOUNT_RETRY_INTERVAL_MS = 250;
@@ -52,9 +52,7 @@ interface State {
   projects: Project[];
   ui: UIState;
 
-  rightRailPanel: HTMLElement | null;
   rightRailMount: MountHandle | null;
-  endscreenPanel: HTMLElement | null;
   endscreenMount: MountHandle | null;
   endscreenTrigger: EndscreenTrigger | null;
   retryScheduled: boolean;
@@ -74,9 +72,7 @@ export function start(ctx: ContentScriptContext): void {
     tasks: [],
     projects: [],
     ui: { kind: 'loading' },
-    rightRailPanel: null,
     rightRailMount: null,
-    endscreenPanel: null,
     endscreenMount: null,
     endscreenTrigger: null,
     retryScheduled: false,
@@ -190,9 +186,8 @@ function scheduleMountRightRail(state: State, startTime: number): void {
     if (state.rightRailMount) return;
 
     try {
-      const panel = createPanel(toPanelState(state));
-      state.rightRailMount = mountRightRail(panel);
-      state.rightRailPanel = panel;
+      state.rightRailMount = mountRightRail({ cssText: panelCss });
+      renderPanel(state.rightRailMount.root, toPanelState(state));
       log.info('Right rail mounted (strategy', state.rightRailMount.strategyIndex, ')');
       refreshUi(state);
     } catch (err) {
@@ -217,9 +212,8 @@ function armEndscreenTrigger(state: State): void {
   state.endscreenTrigger = onEndscreenReady(() => {
     if (state.endscreenMount) return;
     try {
-      const panel = createPanel(toPanelState(state));
-      state.endscreenMount = mountEndscreen(panel);
-      state.endscreenPanel = panel;
+      state.endscreenMount = mountEndscreen({ cssText: panelCss });
+      renderPanel(state.endscreenMount.root, toPanelState(state));
       log.info('Endscreen mounted (strategy', state.endscreenMount.strategyIndex, ')');
     } catch (err) {
       if (!(err instanceof SelectorMissError)) {
@@ -238,7 +232,6 @@ function unmountRightRail(state: State): void {
     }
   }
   state.rightRailMount = null;
-  state.rightRailPanel = null;
 }
 
 function unmountEndscreen(state: State): void {
@@ -252,7 +245,6 @@ function unmountEndscreen(state: State): void {
     }
   }
   state.endscreenMount = null;
-  state.endscreenPanel = null;
 }
 
 function teardown(state: State): void {
@@ -293,8 +285,8 @@ async function fetchTasks(state: State): Promise<void> {
 function setUi(state: State, ui: UIState): void {
   state.ui = ui;
   const panelState = toPanelState(state);
-  if (state.rightRailPanel) updatePanel(state.rightRailPanel, panelState);
-  if (state.endscreenPanel) updatePanel(state.endscreenPanel, panelState);
+  if (state.rightRailMount) renderPanel(state.rightRailMount.root, panelState);
+  if (state.endscreenMount) renderPanel(state.endscreenMount.root, panelState);
 }
 
 function toPanelState(state: State): PanelState {

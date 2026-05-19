@@ -27,17 +27,17 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 export function row(label: string, control: HTMLElement, help?: string): HTMLElement {
   return el(
     'label',
-    { class: 'row' },
+    { class: 'tt-row' },
     el(
       'span',
-      { class: 'row-label' },
+      { class: 'tt-row__label' },
       label,
-      help ? el('span', { class: 'row-help' }, help) : null,
+      help ? el('span', { class: 'tt-row__help' }, help) : null,
     ),
     control,
   );
 }
 
 export function pill(text: string, kind: 'ok' | 'warn' | 'muted' = 'muted'): HTMLElement {
-  return el('span', { class: `pill pill-${kind}`, text });
+  return el('span', { class: `tt-pill tt-pill--${kind}`, text });
 }

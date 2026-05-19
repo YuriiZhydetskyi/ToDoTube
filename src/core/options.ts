@@ -2,6 +2,12 @@
 // options/main.ts`) calls `startOptions(document.body)` and we own the
 // rest — initial fetch, layout, and section wiring.
 
+// Side-effect import so the bundler emits the Settings stylesheet into
+// the options page chunk. Lives here (in core) so the entry stays
+// agnostic and the boundaries/dependencies rule (entry → ui is denied)
+// is respected.
+import '@/ui/styles/options.css';
+
 import { getSettings, onSettingsChange } from '@/shared/storage';
 import { el } from '@/ui/options/dom';
 import {
@@ -17,20 +23,20 @@ export async function startOptions(root: HTMLElement): Promise<void> {
 
   root.replaceChildren();
 
-  const main = el('main', { class: 'options-main' });
-  const accountSection = el('section', { class: 'section' });
-  const displaySection = el('section', { class: 'section' });
-  const behaviorSection = el('section', { class: 'section' });
-  const advancedSection = el('section', { class: 'section' });
-  const aboutSection = el('section', { class: 'section' });
+  const main = el('main', { class: 'tt-page' });
+  const accountSection = el('section', { class: 'tt-card' });
+  const displaySection = el('section', { class: 'tt-card' });
+  const behaviorSection = el('section', { class: 'tt-card' });
+  const advancedSection = el('section', { class: 'tt-card' });
+  const aboutSection = el('section', { class: 'tt-card' });
 
   main.append(
     el(
       'header',
-      { class: 'options-header' },
-      el('h1', { text: 'ToDoTube' }),
+      {},
+      el('h1', { class: 'tt-page__title', text: 'ToDoTube' }),
       el('p', {
-        class: 'options-sub',
+        class: 'tt-page__lede',
         text: 'Replace YouTube recommendations with your to-do list.',
       }),
     ),

@@ -1,0 +1,149 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* The panel renders inside a shadow root attached to a host element in
+ * YouTube's DOM. Custom properties inherit through the shadow boundary,
+ * so `var(--yt-spec-*)` resolves against the document — that's how the
+ * panel follows YouTube's light/dark theme without any code. */
+:host {
+  --tt-bg: var(--yt-spec-base-background, #ffffff);
+  --tt-bg-elevated: var(--yt-spec-additive-background, var(--yt-spec-base-background, #ffffff));
+  --tt-fg: var(--yt-spec-text-primary, #0f0f0f);
+  --tt-fg-muted: var(--yt-spec-text-secondary, #606060);
+  --tt-border: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.08));
+  --tt-border-strong: var(--yt-spec-outline, rgba(0, 0, 0, 0.16));
+  --tt-accent: var(--yt-spec-call-to-action, #065fd4);
+  --tt-accent-fg: var(--yt-spec-text-primary-inverse, #ffffff);
+  --tt-accent-soft: color-mix(in srgb, var(--tt-accent) 12%, transparent);
+  /* Pills + error are static — YouTube has no semantic equivalents we
+   * can reuse reliably across themes. The color-mix() falls back to the
+   * static value in browsers without support. */
+  --tt-pill-ok-bg: color-mix(in srgb, #2e7d32 18%, transparent);
+  --tt-pill-ok-fg: #2e7d32;
+  --tt-pill-warn-bg: color-mix(in srgb, #92590b 18%, transparent);
+  --tt-pill-warn-fg: #92590b;
+  --tt-pill-muted-bg: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05));
+  --tt-pill-muted-fg: var(--yt-spec-text-secondary, #606060);
+  --tt-error-fg: #d93025;
+  --tt-error-bg: color-mix(in srgb, #d93025 12%, transparent);
+
+  display: block;
+  font-family: var(--font-sans);
+}
+
+/* Endscreen overlay fills its host area and centers the panel
+ * vertically; the right-rail variant flows normally. */
+:host([data-todotube-panel='endscreen']) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+}
+
+@layer components {
+  .tt-panel {
+    @apply rounded-tt-lg border border-tt-border bg-tt-bg p-5 text-xl leading-snug text-tt-fg;
+    margin: 0 0 16px 0;
+  }
+  :host([data-todotube-panel='endscreen']) .tt-panel {
+    @apply max-w-lg;
+    margin: auto;
+    width: 92%;
+  }
+
+  /* Header — list picker + refresh button. Gets a subtle bottom border
+   * only when followed by a list of tasks (the .tt-panel__list class is
+   * the next sibling). */
+  .tt-panel__header {
+    @apply mb-4 flex items-center gap-2;
+  }
+  .tt-panel__header:has(+ .tt-panel__list) {
+    @apply border-b border-tt-border pb-3;
+  }
+  .tt-panel__caption {
+    @apply -mt-2 mb-4 text-lg text-tt-fg-muted;
+  }
+
+  .tt-panel__select {
+    @apply min-w-0 flex-1 cursor-pointer rounded-tt-md border border-tt-border bg-tt-bg
+           px-3 py-2 text-xl text-tt-fg
+           transition-colors duration-150 ease-tt
+           hover:border-tt-border-strong
+           focus:outline-none focus-visible:border-tt-accent
+           focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
+
+  .tt-panel__refresh {
+    @apply inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-tt-md
+           border border-tt-border bg-tt-bg text-2xl text-tt-fg
+           transition-all duration-150 ease-tt
+           hover:rotate-90 hover:border-tt-accent hover:text-tt-accent
+           focus:outline-none focus-visible:border-tt-accent
+           focus-visible:ring-2 focus-visible:ring-tt-accent-soft
+           motion-reduce:hover:rotate-0;
+  }
+
+  .tt-panel__heading {
+    @apply mb-3 text-2xl font-semibold tracking-tight text-tt-fg;
+  }
+  .tt-panel__line {
+    @apply mb-3 text-tt-fg;
+  }
+  .tt-panel__line-muted {
+    @apply mb-4 text-tt-fg-muted;
+  }
+
+  /* Task list — list reset + per-row layout. */
+  .tt-panel__list {
+    @apply m-0 list-none p-0;
+  }
+  .tt-panel__task {
+    @apply -mx-2 flex cursor-pointer items-center gap-3 rounded-tt-md px-2 py-3.5
+           text-tt-fg transition-colors duration-150 ease-tt
+           hover:bg-tt-accent-soft
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+    border-bottom: 1px solid var(--tt-border);
+  }
+  .tt-panel__task:last-child {
+    border-bottom: 0;
+  }
+  .tt-panel__checkbox {
+    @apply inline-block h-6 w-6 shrink-0 rounded-full border-2 border-tt-fg-muted
+           transition-colors duration-150 ease-tt;
+  }
+  .tt-panel__task:hover .tt-panel__checkbox {
+    @apply border-tt-accent;
+  }
+  .tt-panel__task-title {
+    @apply flex-1 truncate text-xl text-tt-fg;
+  }
+  .tt-panel__due {
+    @apply inline-flex shrink-0 items-center rounded-tt-pill bg-tt-pill-muted-bg px-2.5 py-1
+           text-base font-medium text-tt-pill-muted-fg;
+  }
+
+  /* Buttons */
+  .tt-panel__btn {
+    @apply mt-4 inline-flex w-full cursor-pointer items-center justify-center rounded-tt-md
+           border border-transparent bg-tt-accent px-4 py-3 text-xl font-medium text-tt-accent-fg
+           transition-all duration-150 ease-tt
+           hover:opacity-90
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
+
+  /* Error state — top-tinted accent bar inside the panel card. */
+  .tt-panel__error {
+    @apply mt-3 rounded-tt-md bg-tt-error-bg px-4 py-3 text-xl text-tt-error-fg;
+  }
+
+  /* Loading skeleton — three quiet pulse rows. */
+  .tt-panel__skeleton {
+    @apply mb-2 flex items-center gap-3 py-3.5;
+  }
+  .tt-panel__skeleton-dot {
+    @apply h-6 w-6 shrink-0 animate-pulse rounded-full bg-tt-border-strong;
+  }
+  .tt-panel__skeleton-bar {
+    @apply h-4 flex-1 animate-pulse rounded-tt-pill bg-tt-border;
+  }
+}

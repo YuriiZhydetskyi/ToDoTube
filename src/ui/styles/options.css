@@ -1,0 +1,174 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* Light / dark token values for the standalone Settings page. The page
+ * is fully isolated from YouTube's DOM so it owns its theme entirely
+ * and follows the OS preference. Values mirror what we had in the
+ * inline <style> block of `options/index.html` before the migration. */
+
+:root {
+  --tt-bg: #ffffff;
+  --tt-bg-elevated: #ffffff;
+  --tt-fg: #0f0f0f;
+  --tt-fg-muted: #606060;
+  --tt-border: rgba(0, 0, 0, 0.08);
+  --tt-border-strong: rgba(0, 0, 0, 0.16);
+  --tt-accent: #065fd4;
+  --tt-accent-fg: #ffffff;
+  --tt-accent-soft: rgba(6, 95, 212, 0.08);
+  --tt-pill-ok-bg: #e6f4ea;
+  --tt-pill-ok-fg: #146c2e;
+  --tt-pill-warn-bg: #fef7e0;
+  --tt-pill-warn-fg: #92590b;
+  --tt-pill-muted-bg: #eeeeee;
+  --tt-pill-muted-fg: #555555;
+  --tt-error-fg: #b00020;
+  --tt-error-bg: rgba(176, 0, 32, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tt-bg: #0f0f0f;
+    --tt-bg-elevated: #181818;
+    --tt-fg: #ffffff;
+    --tt-fg-muted: #aaaaaa;
+    --tt-border: rgba(255, 255, 255, 0.08);
+    --tt-border-strong: rgba(255, 255, 255, 0.16);
+    --tt-accent: #3ea6ff;
+    --tt-accent-fg: #0f0f0f;
+    --tt-accent-soft: rgba(62, 166, 255, 0.12);
+    --tt-pill-ok-bg: rgba(46, 125, 50, 0.2);
+    --tt-pill-ok-fg: #81c784;
+    --tt-pill-warn-bg: rgba(146, 89, 11, 0.2);
+    --tt-pill-warn-fg: #ffb74d;
+    --tt-pill-muted-bg: rgba(255, 255, 255, 0.08);
+    --tt-pill-muted-fg: #bbbbbb;
+    --tt-error-fg: #ff6679;
+    --tt-error-bg: rgba(255, 102, 121, 0.1);
+  }
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--tt-bg);
+    color: var(--tt-fg);
+    font-family: var(--font-sans);
+    font-size: 20px;
+    line-height: 1.5;
+  }
+}
+
+/* Component classes for the Settings page. Each name maps to a small
+ * recipe of utilities so the TS render code stays readable, while the
+ * actual styling lives here next to the design tokens. */
+@layer components {
+  .tt-page {
+    @apply mx-auto max-w-180 px-6 pt-10 pb-16;
+  }
+  .tt-page__title {
+    @apply m-0 text-3xl font-semibold tracking-tight text-tt-fg;
+  }
+  .tt-page__lede {
+    @apply mt-1.5 mb-10 text-tt-fg-muted;
+  }
+  .tt-card {
+    @apply mb-5 rounded-tt-lg border border-tt-border bg-tt-bg-elevated px-6 py-5
+           transition-colors duration-150;
+  }
+  .tt-card__title {
+    @apply mt-0 mb-4 text-base font-semibold text-tt-fg;
+  }
+  .tt-row {
+    @apply flex items-center justify-between gap-4 border-b border-tt-border py-3
+           last:border-b-0 last:pb-0 first:pt-0;
+  }
+  .tt-row--vertical {
+    @apply flex-col items-stretch py-3;
+  }
+  .tt-row--vertical .tt-row__label {
+    @apply mb-2;
+  }
+  .tt-row__label {
+    @apply flex flex-1 flex-col gap-0.5 text-tt-fg;
+  }
+  .tt-row__help {
+    @apply text-xs text-tt-fg-muted;
+  }
+  .tt-input,
+  .tt-select,
+  .tt-json {
+    @apply rounded-tt-sm border border-tt-border-strong bg-tt-bg px-2 py-1.5 text-sm text-tt-fg
+           font-sans transition-colors duration-150
+           focus:outline-none focus-visible:border-tt-accent
+           focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
+  .tt-input {
+    @apply w-24;
+  }
+  .tt-select {
+    @apply min-w-50 cursor-pointer;
+  }
+  .tt-json {
+    @apply w-full font-mono text-xs leading-relaxed;
+    /* Resize is fine; let users see more JSON when they want to. */
+  }
+  .tt-btn {
+    @apply inline-flex cursor-pointer items-center justify-center rounded-tt-sm
+           border border-tt-border-strong bg-tt-bg px-3.5 py-2 text-sm font-medium text-tt-fg
+           transition-colors duration-150
+           hover:border-tt-accent
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft
+           disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-tt-border-strong;
+  }
+  .tt-btn--primary {
+    @apply border-transparent bg-tt-accent text-tt-accent-fg
+           hover:border-transparent hover:opacity-90
+           disabled:hover:border-transparent;
+  }
+  .tt-btn--secondary {
+    @apply bg-transparent;
+  }
+  .tt-btn-row {
+    @apply flex flex-wrap gap-2 py-2;
+  }
+  .tt-pill {
+    @apply inline-flex items-center rounded-tt-pill px-2 py-0.5 text-xs font-medium;
+  }
+  .tt-pill--ok {
+    @apply bg-tt-pill-ok-bg text-tt-pill-ok-fg;
+  }
+  .tt-pill--warn {
+    @apply bg-tt-pill-warn-bg text-tt-pill-warn-fg;
+  }
+  .tt-pill--muted {
+    @apply bg-tt-pill-muted-bg text-tt-pill-muted-fg;
+  }
+  .tt-provider {
+    @apply flex items-center gap-3 py-3;
+  }
+  .tt-provider__name {
+    @apply flex-1 font-medium text-tt-fg;
+  }
+  .tt-advanced > summary {
+    @apply -mx-1 cursor-pointer list-none rounded-tt-sm px-1 py-1.5 text-base font-semibold text-tt-fg
+           transition-colors duration-150
+           hover:text-tt-accent
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
+  .tt-advanced[open] > summary {
+    @apply mb-3;
+  }
+  .tt-advanced__status {
+    @apply py-1 text-xs text-tt-fg-muted;
+  }
+  .tt-link {
+    @apply text-tt-accent no-underline transition-colors duration-150 hover:underline;
+  }
+  .tt-error {
+    @apply mt-2 rounded-tt-sm bg-tt-error-bg px-3 py-2 text-sm text-tt-error-fg;
+  }
+  .tt-about-links {
+    @apply flex flex-wrap gap-4;
+  }
+}

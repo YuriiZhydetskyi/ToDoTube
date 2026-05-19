@@ -1,8 +1,18 @@
 // Vanilla-DOM panel. Provider-agnostic. The lifecycle layer owns the
 // canonical task list; this file is a render-only function over a typed
-// state value, plus `updatePanel(root, state)` for in-place re-renders.
+// state value, plus `updatePanel(root, state)` as an alias for the
+// initial-mount + re-render path.
+//
+// Styling lives in `src/ui/styles/panel.css`. We import the compiled
+// CSS as a string via Vite's `?inline` and re-export it here so callers
+// (the lifecycle layer) can hand it to the surface adapter for shadow
+// root injection — keeping the surfaces layer free of UI dependencies.
+
+import panelCssText from '@/ui/styles/panel.css?inline';
 
 import { isSynthetic, type ListId, type Project, type Task } from '@/shared/types';
+
+export const panelCss: string = panelCssText;
 
 // Optional header rendered above the task body — list picker on the
 // left, refresh button on the right. The lifecycle passes this only
@@ -23,34 +33,8 @@ export type PanelState =
   | { kind: 'list'; tasks: Task[]; onComplete: (task: Task) => void; header?: PanelHeader }
   | { kind: 'error'; message: string; onRetry: () => void; header?: PanelHeader };
 
-// Inline `all: initial` reset on the root keeps YouTube's stylesheets
-// from leaking into our panel.
-const RESET = 'all: initial; display: block; box-sizing: border-box;';
-
-export function createPanel(state: PanelState): HTMLElement {
-  const root = document.createElement('div');
-  root.setAttribute('data-todotube-panel-root', '');
-  root.style.cssText = `
-    ${RESET}
-    padding: 16px;
-    margin: 0 0 16px 0;
-    background: var(--yt-spec-base-background, #ffffff);
-    color: var(--yt-spec-text-primary, #0f0f0f);
-    font-family: 'Roboto', 'Segoe UI', system-ui, sans-serif;
-    font-size: 14px;
-    line-height: 1.4;
-    border-radius: 12px;
-    border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
-  `;
-  render(root, state);
-  return root;
-}
-
-export function updatePanel(root: HTMLElement, state: PanelState): void {
-  render(root, state);
-}
-
-function render(root: HTMLElement, state: PanelState): void {
+export function renderPanel(root: HTMLElement, state: PanelState): void {
+  root.className = 'tt-panel';
   root.replaceChildren();
 
   if ('header' in state && state.header) {
@@ -63,34 +47,33 @@ function render(root: HTMLElement, state: PanelState): void {
   switch (state.kind) {
     case 'placeholder':
       root.appendChild(heading('ToDoTube'));
-      root.appendChild(line('Placeholder panel — connect a provider to see your tasks.'));
+      root.appendChild(line('Placeholder panel — connect a provider to see your tasks.', 'muted'));
       return;
 
     case 'loading':
       if (!state.header) root.appendChild(heading('ToDoTube'));
-      root.appendChild(line('Loading your tasks…'));
+      root.appendChild(skeletonRows(3));
       return;
 
     case 'disconnected': {
       root.appendChild(heading('ToDoTube'));
-      root.appendChild(line('Connect your TickTick account to see today’s tasks here.'));
-      const btn = button('Connect TickTick', () => state.onConnect());
-      root.appendChild(btn);
+      root.appendChild(line('Connect your TickTick account to see today’s tasks here.', 'muted'));
+      root.appendChild(button('Connect TickTick', () => state.onConnect()));
       return;
     }
 
     case 'empty':
       root.appendChild(heading('You’re done 🎉'));
-      root.appendChild(line('Nothing left on your list.'));
+      root.appendChild(line('Nothing left on your list.', 'muted'));
       return;
 
     case 'list': {
       if (state.tasks.length === 0) {
-        root.appendChild(line('No matching tasks.'));
+        root.appendChild(line('No matching tasks.', 'muted'));
         return;
       }
       const ul = document.createElement('ul');
-      ul.style.cssText = `${RESET} margin: 0; padding: 0; list-style: none;`;
+      ul.className = 'tt-panel__list';
       for (const task of state.tasks) {
         ul.appendChild(taskRow(task, () => state.onComplete(task)));
       }
@@ -100,41 +83,30 @@ function render(root: HTMLElement, state: PanelState): void {
 
     case 'error': {
       root.appendChild(heading('Something went wrong'));
-      root.appendChild(line(state.message));
+      const err = document.createElement('div');
+      err.className = 'tt-panel__error';
+      err.textContent = state.message;
+      root.appendChild(err);
       root.appendChild(button('Retry', () => state.onRetry()));
       return;
     }
   }
 }
 
+// Backwards-compatible alias — callers that previously used either name
+// can keep using either; both render the full panel into `root`.
+export const updatePanel = renderPanel;
+
 function renderHeader(header: PanelHeader): HTMLElement {
   const bar = document.createElement('div');
-  bar.style.cssText = `
-    ${RESET}
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 0 12px 0;
-  `;
+  bar.className = 'tt-panel__header';
 
   // List picker — hidden until we know what lists exist. While projects
   // are still loading we just show the refresh button, which gives the
   // user something to click if the initial fetch is slow.
   if (header.projects.length > 0) {
     const select = document.createElement('select');
-    select.style.cssText = `
-      ${RESET}
-      flex: 1;
-      min-width: 0;
-      padding: 6px 10px;
-      border-radius: 8px;
-      border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
-      background: var(--yt-spec-base-background, #ffffff);
-      color: var(--yt-spec-text-primary, #0f0f0f);
-      font-family: inherit;
-      font-size: inherit;
-      cursor: pointer;
-    `;
+    select.className = 'tt-panel__select';
     for (const p of header.projects) {
       const opt = document.createElement('option');
       opt.value = p.id;
@@ -147,30 +119,18 @@ function renderHeader(header: PanelHeader): HTMLElement {
   } else {
     // Spacer so the refresh button stays on the right while loading.
     const spacer = document.createElement('div');
-    spacer.style.cssText = `${RESET} flex: 1;`;
+    spacer.className = 'flex-1';
     bar.appendChild(spacer);
   }
 
   const refresh = document.createElement('button');
   refresh.type = 'button';
+  refresh.className = 'tt-panel__refresh';
   refresh.setAttribute('aria-label', 'Refresh tasks');
   refresh.title = 'Refresh';
   // U+21BB CLOCKWISE OPEN CIRCLE ARROW — universally rendered, no need
   // to bundle an SVG sprite for one glyph.
   refresh.textContent = '↻';
-  refresh.style.cssText = `
-    ${RESET}
-    cursor: pointer;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
-    background: var(--yt-spec-base-background, #ffffff);
-    color: var(--yt-spec-text-primary, #0f0f0f);
-    font-size: 18px;
-    line-height: 1;
-    flex-shrink: 0;
-  `;
   refresh.addEventListener('click', () => header.onRefresh());
   bar.appendChild(refresh);
 
@@ -179,87 +139,84 @@ function renderHeader(header: PanelHeader): HTMLElement {
 
 function heading(text: string): HTMLElement {
   const h = document.createElement('div');
+  h.className = 'tt-panel__heading';
   h.textContent = text;
-  h.style.cssText = `${RESET} font-weight: 600; font-size: 16px; margin: 0 0 8px 0;`;
   return h;
 }
 
 function caption(text: string): HTMLElement {
   const c = document.createElement('div');
+  c.className = 'tt-panel__caption';
   c.textContent = text;
-  c.style.cssText = `
-    ${RESET}
-    font-size: 12px;
-    color: var(--yt-spec-text-secondary, #606060);
-    margin: -4px 0 12px 0;
-  `;
   return c;
 }
 
-function line(text: string): HTMLElement {
+function line(text: string, tone: 'default' | 'muted' = 'default'): HTMLElement {
   const p = document.createElement('div');
+  p.className = tone === 'muted' ? 'tt-panel__line-muted' : 'tt-panel__line';
   p.textContent = text;
-  p.style.cssText = `${RESET} display: block; margin: 0 0 8px 0;`;
   return p;
 }
 
 function button(label: string, onClick: () => void): HTMLButtonElement {
   const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tt-panel__btn';
   btn.textContent = label;
-  btn.style.cssText = `
-    ${RESET}
-    cursor: pointer;
-    padding: 8px 14px;
-    border-radius: 8px;
-    background: #065fd4;
-    color: #fff;
-    font-weight: 500;
-    font-family: inherit;
-    font-size: inherit;
-    border: 0;
-  `;
   btn.addEventListener('click', onClick);
   return btn;
 }
 
 function taskRow(task: Task, onComplete: () => void): HTMLElement {
   const li = document.createElement('li');
-  li.style.cssText = `
-    ${RESET}
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.05));
-    cursor: pointer;
-  `;
+  li.className = 'tt-panel__task';
+  li.tabIndex = 0;
+  li.setAttribute('role', 'button');
+  li.setAttribute('aria-label', `Complete: ${task.title}`);
   li.addEventListener('click', () => onComplete());
+  li.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onComplete();
+    }
+  });
 
   const checkbox = document.createElement('span');
-  checkbox.style.cssText = `
-    ${RESET}
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border: 1.5px solid var(--yt-spec-text-secondary, #606060);
-    border-radius: 50%;
-    flex-shrink: 0;
-  `;
+  checkbox.className = 'tt-panel__checkbox';
+  checkbox.setAttribute('aria-hidden', 'true');
   li.appendChild(checkbox);
 
   const label = document.createElement('span');
+  label.className = 'tt-panel__task-title';
   label.textContent = task.title;
-  label.style.cssText = `${RESET} flex: 1; color: var(--yt-spec-text-primary, #0f0f0f);`;
   li.appendChild(label);
 
   if (task.dueDate) {
     const due = document.createElement('span');
+    due.className = 'tt-panel__due';
     due.textContent = formatDueTime(task.dueDate);
-    due.style.cssText = `${RESET} font-size: 12px; color: var(--yt-spec-text-secondary, #606060);`;
     li.appendChild(due);
   }
 
   return li;
+}
+
+function skeletonRows(count: number): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.setAttribute('aria-label', 'Loading tasks');
+  wrap.setAttribute('role', 'status');
+  for (let i = 0; i < count; i++) {
+    const row = document.createElement('div');
+    row.className = 'tt-panel__skeleton';
+    const dot = document.createElement('span');
+    dot.className = 'tt-panel__skeleton-dot';
+    const bar = document.createElement('span');
+    bar.className = 'tt-panel__skeleton-bar';
+    row.appendChild(dot);
+    row.appendChild(bar);
+    wrap.appendChild(row);
+  }
+  return wrap;
 }
 
 function formatDueTime(iso: string): string {

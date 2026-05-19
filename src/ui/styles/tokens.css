@@ -1,0 +1,39 @@
+/* Shared design tokens for all ToDoTube surfaces.
+ *
+ * Each surface (panel, options, popup) defines the raw `--tt-*` values
+ * for its own context — panel maps them to YouTube CSS vars, options /
+ * popup define light values + `prefers-color-scheme` dark overrides.
+ * This file only wires those raw values into Tailwind utilities via
+ * `@theme inline`, so e.g. `bg-tt-bg` always reads the right value
+ * regardless of surface or theme.
+ */
+
+@theme inline {
+  --color-tt-bg: var(--tt-bg);
+  --color-tt-bg-elevated: var(--tt-bg-elevated);
+  --color-tt-fg: var(--tt-fg);
+  --color-tt-fg-muted: var(--tt-fg-muted);
+  --color-tt-border: var(--tt-border);
+  --color-tt-border-strong: var(--tt-border-strong);
+  --color-tt-accent: var(--tt-accent);
+  --color-tt-accent-fg: var(--tt-accent-fg);
+  --color-tt-accent-soft: var(--tt-accent-soft);
+  --color-tt-pill-ok-bg: var(--tt-pill-ok-bg);
+  --color-tt-pill-ok-fg: var(--tt-pill-ok-fg);
+  --color-tt-pill-warn-bg: var(--tt-pill-warn-bg);
+  --color-tt-pill-warn-fg: var(--tt-pill-warn-fg);
+  --color-tt-pill-muted-bg: var(--tt-pill-muted-bg);
+  --color-tt-pill-muted-fg: var(--tt-pill-muted-fg);
+  --color-tt-error-fg: var(--tt-error-fg);
+  --color-tt-error-bg: var(--tt-error-bg);
+
+  --radius-tt-sm: 6px;
+  --radius-tt-md: 8px;
+  --radius-tt-lg: 12px;
+  --radius-tt-pill: 999px;
+
+  --font-sans: 'Roboto', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', monospace;
+
+  --ease-tt: cubic-bezier(0.2, 0, 0, 1);
+}

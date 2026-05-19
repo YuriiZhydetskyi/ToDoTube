@@ -7,6 +7,11 @@
 // and the popup stays consistent if active provider/list changes via
 // some other route.
 
+// Side-effect import so the bundler emits the popup stylesheet into the
+// popup chunk. Lives here (in core) so the entry stays agnostic and
+// the boundaries/dependencies rule (entry → ui is denied) is respected.
+import '@/ui/styles/popup.css';
+
 import { browser } from 'wxt/browser';
 
 import { sendToBackground } from '@/shared/messaging';
@@ -16,46 +21,73 @@ import { el } from '@/ui/options/dom';
 export async function startPopup(root: HTMLElement): Promise<void> {
   root.replaceChildren();
 
-  const wrap = el('div', { class: 'popup' });
-  const title = el('div', { class: 'popup-title', text: 'ToDoTube' });
+  const wrap = el('div', { class: 'tt-popup' });
 
-  const enabledRow = el('div', { class: 'popup-row' });
-  const toggle = el('input', { type: 'checkbox' }) as HTMLInputElement;
-  const toggleLabel = el(
-    'label',
-    { class: 'popup-toggle' },
-    toggle,
-    el('span', { text: 'Enabled' }),
+  // Title with a small brand dot.
+  const title = el(
+    'div',
+    { class: 'tt-popup__title' },
+    el('span', { class: 'tt-popup__dot' }),
+    el('span', { text: 'ToDoTube' }),
   );
-  enabledRow.append(toggleLabel);
 
-  const statusLine = el('div', { class: 'popup-status' });
+  // Toggle row with iOS-style switch. The whole row is a <label> so
+  // clicking anywhere on it toggles the checkbox; the inner styled span
+  // composes the track and knob via peer-* utilities on the input.
+  const toggle = el('input', {
+    type: 'checkbox',
+    class: 'tt-toggle__input peer',
+  }) as HTMLInputElement;
+  const switchControl = el(
+    'span',
+    { class: 'tt-toggle' },
+    toggle,
+    el('span', { class: 'tt-toggle__track' }),
+    el('span', { class: 'tt-toggle__knob' }),
+  );
+  const toggleRow = el(
+    'label',
+    { class: 'tt-popup__row cursor-pointer select-none' },
+    el('span', { class: 'tt-popup__row-label', text: 'Enabled' }),
+    switchControl,
+  );
 
-  const settingsBtn = el('button', { class: 'btn btn-secondary', text: 'Open settings' });
+  // Status: two-line layout (primary + secondary) when connected.
+  const statusPrimary = el('div', { class: 'tt-popup__status-primary' });
+  const statusSecondary = el('div', { class: 'tt-popup__status-secondary' });
+  const statusBlock = el('div', { class: 'tt-popup__status' }, statusPrimary, statusSecondary);
+
+  const settingsBtn = el('button', {
+    class: 'tt-popup__btn',
+    text: 'Open settings',
+  });
   settingsBtn.addEventListener('click', () => {
     void browser.runtime.openOptionsPage();
     window.close();
   });
 
-  wrap.append(title, enabledRow, statusLine, settingsBtn);
+  wrap.append(title, toggleRow, statusBlock, settingsBtn);
   root.append(wrap);
 
   async function refresh(): Promise<void> {
     const r = await sendToBackground({ type: 'GET_STATE' });
     if (!r.ok) {
-      statusLine.textContent = `Could not load state: ${r.error}`;
+      statusPrimary.textContent = 'Could not load state';
+      statusSecondary.textContent = r.error;
       return;
     }
     const { settings, authenticated } = r.value;
     toggle.checked = settings.enabled;
     if (!settings.activeProviderId || !authenticated) {
-      statusLine.textContent = 'Not connected. Open settings to connect.';
+      statusPrimary.textContent = 'Not connected';
+      statusSecondary.textContent = 'Open settings to connect.';
       return;
     }
     const providerState = await getProviderState(settings.activeProviderId);
     const list = providerState.activeListId ?? 'smart:today';
     const listLabel = list === 'smart:today' ? 'Today' : list;
-    statusLine.textContent = `TickTick · ${listLabel}`;
+    statusPrimary.textContent = 'TickTick';
+    statusSecondary.textContent = `List: ${listLabel}`;
   }
 
   toggle.addEventListener('change', () => {
