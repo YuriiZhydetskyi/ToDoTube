@@ -90,6 +90,10 @@ We also explicitly fetch the Inbox project (`/project/inbox/data`) in addition t
 
 Tasks with no `dueDate` and no `startDate` won't be in Today — pick the project directly from the in-panel dropdown to see them.
 
+## Privacy
+
+Zero telemetry. The extension stores TickTick OAuth tokens and UI preferences in `browser.storage.local` (never synced) and contacts only YouTube (DOM only, no API) and TickTick (so you can see and complete your own tasks). Full policy: [PRIVACY.md](PRIVACY.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -15,12 +15,6 @@ export default defineConfig({
   }),
   // Firefox MV3 is opt-in in WXT 0.20 — explicit so both builds match.
   manifestVersion: 3,
-  // We collect zero data (see REQUIREMENTS.md §8). The Firefox-MV3
-  // `data_collection_permissions` manifest declaration lands in Step 12
-  // alongside the rest of the release-prep metadata.
-  suppressWarnings: {
-    firefoxDataCollection: true,
-  },
   manifest: {
     name: 'ToDoTube',
     description: 'Replace YouTube recommendations with your to-do list.',
@@ -35,6 +29,11 @@ export default defineConfig({
     browser_specific_settings: {
       gecko: {
         id: 'todotube@todotube.app',
+        // Firefox MV3 requires extensions to declare what data leaves the
+        // user's device. ToDoTube transmits nothing — see PRIVACY.md.
+        data_collection_permissions: {
+          required: ['none'],
+        },
       },
     },
     // NOTE: For a stable Chrome extension ID (and therefore a stable OAuth
