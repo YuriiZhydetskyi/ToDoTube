@@ -11,6 +11,7 @@ import { browser } from 'wxt/browser';
 import { getProviderOrNull } from '@/providers/registry';
 import { log } from '@/shared/logger';
 import { err, ok, type Broadcast, type MessageType, type Request } from '@/shared/messaging';
+import { getProviderDescriptor } from '@/shared/providers';
 import { getProviderState, getSettings, setProviderState, setSettings } from '@/shared/storage';
 import type { ListId, ProviderId } from '@/shared/types';
 
@@ -52,6 +53,12 @@ async function handle(req: Request): Promise<HandlerResult> {
       const provider = getProviderOrNull(req.providerId);
       if (!provider) return err(`Unknown provider: ${req.providerId}`);
       return provider.listTasks(req.listId);
+    }
+
+    case 'AUTH_STATUS': {
+      const provider = getProviderOrNull(req.providerId);
+      if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      return ok({ authenticated: await provider.isAuthenticated() });
     }
 
     case 'COMPLETE_TASK': {
@@ -128,7 +135,8 @@ export async function runRefresh(): Promise<void> {
   if (!provider) return;
 
   const state = await getProviderState(settings.activeProviderId);
-  const listId: ListId = state.activeListId ?? 'smart:today';
+  const listId: ListId =
+    state.activeListId ?? getProviderDescriptor(settings.activeProviderId).defaultListId;
 
   const r = await provider.listTasks(listId);
   if (!r.ok) {
@@ -151,6 +159,7 @@ const KNOWN_TYPES: readonly MessageType[] = [
   'GET_STATE',
   'LIST_PROJECTS',
   'LIST_TASKS',
+  'AUTH_STATUS',
   'COMPLETE_TASK',
   'AUTH_START',
   'AUTH_DISCONNECT',

@@ -8,12 +8,13 @@
 // uncontrolled and write back to storage on `change`.
 
 import { sendToBackground } from '@/shared/messaging';
+import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
 import { getProviderState, setProviderState, setSettings } from '@/shared/storage';
 import type { ProviderId, Settings } from '@/shared/types';
 
 import { el, pill, row } from './dom';
 
-const PROVIDER_ID: ProviderId = 'ticktick';
+const PROVIDER_ID: ProviderId = DEFAULT_PROVIDER_ID;
 
 export async function renderAccountSection(
   container: HTMLElement,
@@ -22,18 +23,19 @@ export async function renderAccountSection(
   container.replaceChildren();
   container.append(el('h2', { class: 'tt-card__title', text: 'Account' }));
 
-  const state = await sendToBackground({ type: 'GET_STATE' });
-  const authenticated = state.ok && state.value.authenticated;
+  const provider = getProviderDescriptor(PROVIDER_ID);
+  const auth = await sendToBackground({ type: 'AUTH_STATUS', providerId: PROVIDER_ID });
+  const authenticated = auth.ok && auth.value.authenticated;
 
-  // ----- TickTick row -----
+  // ----- Provider row -----
   const tickRow = el('div', { class: 'tt-provider' });
   tickRow.append(
-    el('div', { class: 'tt-provider__name' }, 'TickTick'),
+    el('div', { class: 'tt-provider__name' }, provider.displayName),
     authenticated ? pill('Connected', 'ok') : pill('Not connected', 'muted'),
   );
 
   const button = el('button', {
-    text: authenticated ? 'Disconnect' : 'Connect TickTick',
+    text: authenticated ? 'Disconnect' : `Connect ${provider.displayName}`,
     class: authenticated ? 'tt-btn tt-btn--secondary' : 'tt-btn tt-btn--primary',
   });
   button.addEventListener('click', async () => {
@@ -65,7 +67,7 @@ export async function renderAccountSection(
   const projects = projectsRes.value;
 
   const providerState = await getProviderState(PROVIDER_ID);
-  const activeListId = providerState.activeListId ?? 'smart:today';
+  const activeListId = providerState.activeListId ?? provider.defaultListId;
 
   const select = el('select', { class: 'tt-select' }) as HTMLSelectElement;
   for (const p of projects) {
@@ -130,6 +132,7 @@ export function renderDisplaySection(container: HTMLElement, settings: Settings)
 export function renderBehaviorSection(container: HTMLElement, settings: Settings): void {
   container.replaceChildren();
   container.append(el('h2', { class: 'tt-card__title', text: 'Behavior' }));
+  const activeProvider = getProviderDescriptor(settings.activeProviderId ?? PROVIDER_ID);
 
   container.append(
     row(
@@ -151,7 +154,7 @@ export function renderBehaviorSection(container: HTMLElement, settings: Settings
         settings.clickBehavior,
         [
           ['complete', 'Mark complete'],
-          ['open', 'Open in TickTick'],
+          ['open', `Open in ${activeProvider.displayName}`],
         ],
         (v) => void setSettings({ clickBehavior: v as Settings['clickBehavior'] }),
       ),
@@ -247,7 +250,7 @@ export function renderAdvancedSection(container: HTMLElement, settings: Settings
     await sendToBackground({
       type: 'REFRESH_NOW',
       providerId: PROVIDER_ID,
-      listId: ps.activeListId ?? 'smart:today',
+      listId: ps.activeListId ?? getProviderDescriptor(PROVIDER_ID).defaultListId,
     });
   });
 

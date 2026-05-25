@@ -12,9 +12,9 @@
 
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-import { WEB_APP_URL as TICKTICK_WEB_APP_URL } from '@/providers/ticktick/config';
 import { log, setVerbose } from '@/shared/logger';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
+import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
 import type { ListId, Project, ProviderId, Task } from '@/shared/types';
 import {
   mountEndscreen,
@@ -28,8 +28,7 @@ import { panelCss, renderPanel, type PanelHeader, type PanelState } from '@/ui/p
 const WATCH_PATH = '/watch';
 const REMOUNT_RETRY_INTERVAL_MS = 250;
 const REMOUNT_RETRY_DEADLINE_MS = 5_000;
-const DEFAULT_PROVIDER: ProviderId = 'ticktick';
-const DEFAULT_LIST: ListId = 'smart:today';
+const DEFAULT_PROVIDER: ProviderId = DEFAULT_PROVIDER_ID;
 
 type UIState =
   | { kind: 'loading' }
@@ -69,7 +68,7 @@ export function start(ctx: ContentScriptContext): void {
     replaceEndscreen: true,
     authenticated: false,
     providerId: DEFAULT_PROVIDER,
-    listId: DEFAULT_LIST,
+    listId: getProviderDescriptor(DEFAULT_PROVIDER).defaultListId,
     tasks: [],
     projects: [],
     ui: { kind: 'loading' },
@@ -295,7 +294,11 @@ function toPanelState(state: State): PanelState {
     case 'loading':
       return { kind: 'loading', header: buildHeader(state) };
     case 'disconnected':
-      return { kind: 'disconnected', onConnect: () => void onConnectClick(state) };
+      return {
+        kind: 'disconnected',
+        providerName: getProviderDescriptor(state.providerId).displayName,
+        onConnect: () => void onConnectClick(state),
+      };
     case 'empty':
       return { kind: 'empty', header: buildHeader(state) };
     case 'list':
@@ -317,23 +320,19 @@ function toPanelState(state: State): PanelState {
 
 function buildHeader(state: State): PanelHeader | undefined {
   if (!state.authenticated) return undefined;
+  const provider = getProviderDescriptor(state.providerId);
   return {
     projects: state.projects,
     currentListId: state.listId,
-    webAppUrl: webAppUrlFor(state.providerId),
+    providerName: provider.displayName,
+    webAppUrl: provider.webAppUrl,
+    smartListCaption: provider.smartListCaption,
     onListChange: (listId) => void onListPicked(state, listId),
     onRefresh: () => {
       void loadProjects(state);
       void fetchTasks(state);
     },
   };
-}
-
-function webAppUrlFor(providerId: ProviderId): string {
-  switch (providerId) {
-    case 'ticktick':
-      return TICKTICK_WEB_APP_URL;
-  }
 }
 
 async function onConnectClick(state: State): Promise<void> {

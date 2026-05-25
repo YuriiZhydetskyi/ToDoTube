@@ -5,6 +5,7 @@
 import { broadcastToYouTubeTabs, registerHandlers, runRefresh } from '@/core/background/handlers';
 import { onRefreshAlarm, scheduleRefresh } from '@/core/background/refresh';
 import { log, setVerbose } from '@/shared/logger';
+import { PROVIDER_IDS } from '@/shared/providers';
 import { getSettings, onProviderStateChange, onSettingsChange } from '@/shared/storage';
 
 export default defineBackground(() => {
@@ -34,14 +35,16 @@ async function init(): Promise<void> {
 
   // Provider-state changes (especially activeListId set from the
   // options page) need their own signal — they don't live in `settings`.
-  onProviderStateChange('ticktick', (next, prev) => {
-    const nextList = next.activeListId;
-    if (!nextList) return;
-    if (prev && prev.activeListId === nextList) return;
-    void broadcastToYouTubeTabs({
-      type: 'LIST_CHANGED',
-      providerId: 'ticktick',
-      listId: nextList,
+  for (const providerId of PROVIDER_IDS) {
+    onProviderStateChange(providerId, (next, prev) => {
+      const nextList = next.activeListId;
+      if (!nextList) return;
+      if (prev && prev.activeListId === nextList) return;
+      void broadcastToYouTubeTabs({
+        type: 'LIST_CHANGED',
+        providerId,
+        listId: nextList,
+      });
     });
-  });
+  }
 }

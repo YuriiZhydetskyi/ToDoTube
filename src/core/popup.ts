@@ -15,6 +15,7 @@ import '@/ui/styles/popup.css';
 import { browser } from 'wxt/browser';
 
 import { sendToBackground } from '@/shared/messaging';
+import { getProviderDescriptor } from '@/shared/providers';
 import { getProviderState, getSettings } from '@/shared/storage';
 import { el } from '@/ui/options/dom';
 
@@ -84,9 +85,10 @@ export async function startPopup(root: HTMLElement): Promise<void> {
       return;
     }
     const providerState = await getProviderState(settings.activeProviderId);
-    const list = providerState.activeListId ?? 'smart:today';
-    const listLabel = list === 'smart:today' ? 'Today' : list;
-    statusPrimary.textContent = 'TickTick';
+    const provider = getProviderDescriptor(settings.activeProviderId);
+    const list = providerState.activeListId ?? provider.defaultListId;
+    const listLabel = list === provider.defaultListId ? 'Today' : list;
+    statusPrimary.textContent = provider.displayName;
     statusSecondary.textContent = `List: ${listLabel}`;
   }
 

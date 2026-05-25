@@ -22,8 +22,10 @@ export const panelCss: string = panelCssText;
 export interface PanelHeader {
   projects: Project[];
   currentListId: ListId;
+  providerName: string;
   /** External URL opened by the header's "Open <provider>" button. */
   webAppUrl: string;
+  smartListCaption?: string;
   onListChange: (listId: ListId) => void;
   onRefresh: () => void;
 }
@@ -31,7 +33,7 @@ export interface PanelHeader {
 export type PanelState =
   | { kind: 'placeholder' }
   | { kind: 'loading'; header?: PanelHeader }
-  | { kind: 'disconnected'; onConnect: () => void }
+  | { kind: 'disconnected'; providerName: string; onConnect: () => void }
   | { kind: 'empty'; header?: PanelHeader }
   | { kind: 'list'; tasks: Task[]; onComplete: (task: Task) => void; header?: PanelHeader }
   | { kind: 'error'; message: string; onRetry: () => void; header?: PanelHeader };
@@ -47,7 +49,7 @@ export function renderPanel(root: HTMLElement, state: PanelState): void {
 
   if ('header' in state && state.header) {
     const caption = isSynthetic(state.header.currentListId)
-      ? 'Due (≤ 2 days overdue) or starting today'
+      ? state.header.smartListCaption
       : undefined;
     root.appendChild(renderHeader(state.header, caption));
   }
@@ -65,8 +67,10 @@ export function renderPanel(root: HTMLElement, state: PanelState): void {
 
     case 'disconnected': {
       root.appendChild(heading('ToDoTube'));
-      root.appendChild(line('Connect your TickTick account to see today’s tasks here.', 'muted'));
-      root.appendChild(button('Connect TickTick', () => state.onConnect()));
+      root.appendChild(
+        line(`Connect your ${state.providerName} account to see your tasks here.`, 'muted'),
+      );
+      root.appendChild(button(`Connect ${state.providerName}`, () => state.onConnect()));
       return;
     }
 
@@ -134,8 +138,8 @@ function renderHeader(header: PanelHeader, caption: string | undefined): HTMLEle
   const open = document.createElement('button');
   open.type = 'button';
   open.className = 'tt-panel__open';
-  open.setAttribute('aria-label', 'Open TickTick');
-  open.title = 'Open TickTick';
+  open.setAttribute('aria-label', `Open ${header.providerName}`);
+  open.title = `Open ${header.providerName}`;
   open.appendChild(iconExternal());
   open.addEventListener('click', () => {
     window.open(header.webAppUrl, '_blank', 'noopener,noreferrer');
@@ -267,7 +271,7 @@ function formatDue(iso: string): { text: string; tone: DueTone } | null {
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
 
-  // TickTick emits 00:00:00 for "all-day" tasks. Show a locale-aware
+  // Some providers emit 00:00:00 for "all-day" tasks. Show a locale-aware
   // "today"/"сьогодні" marker instead of a literal "00:00" pill.
   const hasNoTime = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
 
@@ -288,14 +292,14 @@ function formatDue(iso: string): { text: string; tone: DueTone } | null {
 }
 
 // Label shown on the "no specific time today" pill. Kept in English
-// for consistency with the rest of the UI strings (`Connect TickTick`,
-// `Retry`, `You're done`, …) — the panel is not yet localized.
+// for consistency with the rest of the UI strings (`Retry`,
+// `You're done`, ...) - the panel is not yet localized.
 function todayLabel(): string {
   return 'Today';
 }
 
-// TickTick scale: 5 = high, 3 = medium, 1 = low, 0 = none. We map
-// "high" + "medium/low" to two visual tiers; none gets no indicator.
+// Providers normalize priority into this visual scale before handing
+// tasks to the UI: 5 = high, 1..4 = medium/low, 0 = none.
 function priorityToTone(priority: number | undefined): 'high' | 'med' | undefined {
   if (priority === undefined) return undefined;
   if (priority >= 5) return 'high';

@@ -33,6 +33,7 @@ export interface Schema {
   GET_STATE: { req: Empty; res: GlobalState };
   LIST_PROJECTS: { req: { providerId: ProviderId }; res: Project[] };
   LIST_TASKS: { req: { providerId: ProviderId; listId: ListId }; res: Task[] };
+  AUTH_STATUS: { req: { providerId: ProviderId }; res: { authenticated: boolean } };
   COMPLETE_TASK: {
     req: { providerId: ProviderId; projectId: string; taskId: string };
     res: null;
