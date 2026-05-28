@@ -35,7 +35,16 @@ export type PanelState =
   | { kind: 'loading'; header?: PanelHeader }
   | { kind: 'disconnected'; providerName: string; onConnect: () => void }
   | { kind: 'empty'; header?: PanelHeader }
-  | { kind: 'list'; tasks: Task[]; onComplete: (task: Task) => void; header?: PanelHeader }
+  | {
+      kind: 'list';
+      tasks: Task[];
+      onComplete: (task: Task) => void;
+      // Present only when clickBehavior = "open": makes each task title a
+      // button that opens the task in the provider's web app. Absent =>
+      // the title is plain text and only the checkbox is interactive.
+      onOpenTask?: (task: Task) => void;
+      header?: PanelHeader;
+    }
   | { kind: 'error'; message: string; onRetry: () => void; header?: PanelHeader };
 
 // Milliseconds the row stays visible after a checkbox click before the
@@ -86,8 +95,16 @@ export function renderPanel(root: HTMLElement, state: PanelState): void {
       }
       const ul = document.createElement('ul');
       ul.className = 'tt-panel__list';
+      const onOpenTask = state.onOpenTask;
       state.tasks.forEach((task, idx) => {
-        ul.appendChild(taskRow(task, idx, () => state.onComplete(task)));
+        ul.appendChild(
+          taskRow(
+            task,
+            idx,
+            () => state.onComplete(task),
+            onOpenTask ? () => onOpenTask(task) : undefined,
+          ),
+        );
       });
       root.appendChild(ul);
       return;
@@ -188,7 +205,12 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
   return btn;
 }
 
-function taskRow(task: Task, index: number, onComplete: () => void): HTMLElement {
+function taskRow(
+  task: Task,
+  index: number,
+  onComplete: () => void,
+  onOpen?: () => void,
+): HTMLElement {
   const li = document.createElement('li');
   li.className = 'tt-panel__task';
   li.style.setProperty('--i', String(index));
@@ -204,9 +226,17 @@ function taskRow(task: Task, index: number, onComplete: () => void): HTMLElement
   checkbox.addEventListener('click', () => completeWithAnimation(li, checkbox, onComplete));
   li.appendChild(checkbox);
 
-  const label = document.createElement('span');
+  // Title is a button (opens the task) when onOpen is supplied, else a
+  // plain span. Same class drives layout/typography in both cases.
+  const label = document.createElement(onOpen ? 'button' : 'span');
   label.className = 'tt-panel__task-title';
   label.textContent = task.title;
+  if (onOpen) {
+    (label as HTMLButtonElement).type = 'button';
+    label.setAttribute('aria-label', `Open: ${task.title}`);
+    label.title = 'Open task';
+    label.addEventListener('click', onOpen);
+  }
   li.appendChild(label);
 
   const due = task.dueDate ? formatDue(task.dueDate) : null;

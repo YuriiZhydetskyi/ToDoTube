@@ -266,6 +266,15 @@
   .tt-panel__task-title {
     @apply min-w-0 flex-1 truncate text-xl font-medium tracking-tight text-tt-fg;
   }
+  /* clickBehavior = "open": the title is a button. Strip the button
+   * chrome (layout/typography stay from the base class) and add a hover
+   * affordance so it reads as a link. */
+  button.tt-panel__task-title {
+    @apply cursor-pointer border-0 bg-transparent p-0 text-left
+           transition-colors duration-150 ease-tt
+           hover:text-tt-brand
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
 
   .tt-panel__due {
     @apply inline-flex shrink-0 items-center rounded-tt-pill px-2.5 py-1 text-xs font-medium;

@@ -6,6 +6,12 @@ export interface ProviderDescriptor {
   webAppUrl: string;
   defaultListId: ListId;
   smartListCaption?: string;
+  /**
+   * Deep link to a single task in the provider's web app. Used by the
+   * "Open in <provider>" click behavior. `projectId` is the task's real
+   * source project (every Task carries it, even synthetic-list tasks).
+   */
+  taskUrl: (projectId: string, taskId: string) => string;
 }
 
 const PROVIDERS: Record<ProviderId, ProviderDescriptor> = {
@@ -15,6 +21,7 @@ const PROVIDERS: Record<ProviderId, ProviderDescriptor> = {
     webAppUrl: 'https://ticktick.com/webapp/',
     defaultListId: 'smart:today',
     smartListCaption: 'Due (<= 2 days overdue) or starting today',
+    taskUrl: (projectId, taskId) => `https://ticktick.com/webapp/#p/${projectId}/tasks/${taskId}`,
   },
 };
 

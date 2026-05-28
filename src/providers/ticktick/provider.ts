@@ -7,6 +7,7 @@
 
 import { log } from '@/shared/logger';
 import { err, ok, type Result } from '@/shared/result';
+import { compareByDue } from '@/shared/tasks';
 import { isSynthetic, type ListId, type Project, type Task } from '@/shared/types';
 
 import type { ListTasksOpts, Provider } from '../types';
@@ -141,7 +142,7 @@ async function listTasksToday(opts: ListTasksOpts): Promise<Result<Task[], strin
       `startDay=[${dayStart.toISOString()} .. ${dayEnd.toISOString()}]`,
   );
 
-  matches.sort(compareTasksByDue);
+  matches.sort(compareByDue);
   return ok(opts.max ? matches.slice(0, opts.max) : matches);
 }
 
@@ -182,13 +183,6 @@ function mapTask(t: api.TickTickTask): Task {
     priority: t.priority,
     completed: t.status !== 0,
   };
-}
-
-function compareTasksByDue(a: Task, b: Task): number {
-  if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-  if (a.dueDate) return -1;
-  if (b.dueDate) return 1;
-  return a.title.localeCompare(b.title);
 }
 
 // --- Exported for unit tests (DST and timezone behavior).

@@ -9,11 +9,14 @@
 import { browser } from 'wxt/browser';
 
 import { getProviderOrNull } from '@/providers/registry';
+import type { Provider } from '@/providers/types';
 import { log } from '@/shared/logger';
 import { err, ok, type Broadcast, type MessageType, type Request } from '@/shared/messaging';
 import { getProviderDescriptor } from '@/shared/providers';
+import type { Result } from '@/shared/result';
 import { getProviderState, getSettings, setProviderState, setSettings } from '@/shared/storage';
-import type { ListId, ProviderId } from '@/shared/types';
+import { sortTasks } from '@/shared/tasks';
+import type { ListId, ProviderId, Task } from '@/shared/types';
 
 import { broadcastToYouTubeTabs } from './broadcast';
 
@@ -52,7 +55,7 @@ async function handle(req: Request): Promise<HandlerResult> {
     case 'LIST_TASKS': {
       const provider = getProviderOrNull(req.providerId);
       if (!provider) return err(`Unknown provider: ${req.providerId}`);
-      return provider.listTasks(req.listId);
+      return listTasksForUi(provider, req.listId);
     }
 
     case 'AUTH_STATUS': {
@@ -106,7 +109,7 @@ async function handle(req: Request): Promise<HandlerResult> {
     case 'REFRESH_NOW': {
       const provider = getProviderOrNull(req.providerId);
       if (!provider) return err(`Unknown provider: ${req.providerId}`);
-      const r = await provider.listTasks(req.listId);
+      const r = await listTasksForUi(provider, req.listId);
       if (!r.ok) return err(r.error);
       void broadcastToYouTubeTabs({
         type: 'TASKS_UPDATED',
@@ -120,6 +123,25 @@ async function handle(req: Request): Promise<HandlerResult> {
     default:
       return err(`Unhandled message: ${(req as { type: string }).type}`);
   }
+}
+
+/**
+ * Fetch a list and apply the user's display preferences in one place, so
+ * the on-demand fetch (LIST_TASKS), the manual refresh (REFRESH_NOW), and
+ * the alarm tick (runRefresh) all return identically shaped data. The
+ * provider returns the raw list; we sort by `sortBy` then cap to
+ * `maxItems`. Sorting happens before the cap so the user's chosen order
+ * decides which items survive the cut.
+ */
+export async function listTasksForUi(
+  provider: Provider,
+  listId: ListId,
+): Promise<Result<Task[], string>> {
+  const settings = await getSettings();
+  const r = await provider.listTasks(listId, { includeCompleted: settings.showCompleted });
+  if (!r.ok) return err(r.error);
+  const sorted = sortTasks(r.value, settings.sortBy);
+  return ok(settings.maxItems > 0 ? sorted.slice(0, settings.maxItems) : sorted);
 }
 
 /**
@@ -138,7 +160,7 @@ export async function runRefresh(): Promise<void> {
   const listId: ListId =
     state.activeListId ?? getProviderDescriptor(settings.activeProviderId).defaultListId;
 
-  const r = await provider.listTasks(listId);
+  const r = await listTasksForUi(provider, listId);
   if (!r.ok) {
     log.debug('Refresh failed:', r.error);
     return;

@@ -15,7 +15,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { log, setVerbose } from '@/shared/logger';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
-import type { ListId, Project, ProviderId, Task } from '@/shared/types';
+import type { ClickBehavior, ListId, Project, ProviderId, Task } from '@/shared/types';
 import {
   mountEndscreen,
   mountRightRail,
@@ -28,6 +28,10 @@ import { panelCss, renderPanel, type PanelHeader, type PanelState } from '@/ui/p
 const WATCH_PATH = '/watch';
 const REMOUNT_RETRY_INTERVAL_MS = 250;
 const REMOUNT_RETRY_DEADLINE_MS = 5_000;
+// A cold MV3 service worker can miss the very first message after browser
+// or extension startup, so we retry the initial GET_STATE a few times.
+const GET_STATE_RETRY_INTERVAL_MS = 300;
+const GET_STATE_RETRY_ATTEMPTS = 6;
 const DEFAULT_PROVIDER: ProviderId = DEFAULT_PROVIDER_ID;
 
 type UIState =
@@ -44,6 +48,7 @@ interface State {
   replaceRightRail: boolean;
   replaceEndscreen: boolean;
   authenticated: boolean;
+  clickBehavior: ClickBehavior;
   providerId: ProviderId;
   listId: ListId;
   tasks: Task[];
@@ -67,6 +72,7 @@ export function start(ctx: ContentScriptContext): void {
     replaceRightRail: true,
     replaceEndscreen: true,
     authenticated: false,
+    clickBehavior: 'complete',
     providerId: DEFAULT_PROVIDER,
     listId: getProviderDescriptor(DEFAULT_PROVIDER).defaultListId,
     tasks: [],
@@ -91,6 +97,7 @@ export function start(ctx: ContentScriptContext): void {
       state.enabled = msg.settings.enabled;
       state.replaceRightRail = msg.settings.replaceRightRail;
       state.replaceEndscreen = msg.settings.replaceEndscreen;
+      state.clickBehavior = msg.settings.clickBehavior;
       if (msg.settings.activeProviderId) state.providerId = msg.settings.activeProviderId;
       evaluate(state);
     } else if (msg.type === 'LIST_CHANGED') {
@@ -122,10 +129,21 @@ export function start(ctx: ContentScriptContext): void {
 }
 
 async function initState(state: State): Promise<void> {
-  const r = await sendToBackground({ type: 'GET_STATE' });
+  // Without this retry, a single failed GET_STATE leaves `state.enabled`
+  // at its `false` default forever: every later `evaluate()` (incl. SPA
+  // locationchange) short-circuits to teardown, so panels never mount
+  // until a manual reload warms the worker. That is the "doesn't work
+  // until I refresh" symptom.
+  let r = await sendToBackground({ type: 'GET_STATE' });
+  for (let attempt = 1; attempt < GET_STATE_RETRY_ATTEMPTS && !r.ok; attempt++) {
+    if (!state.ctx.isValid) return;
+    log.debug('GET_STATE attempt', attempt, 'failed; retrying:', r.error);
+    await delay(GET_STATE_RETRY_INTERVAL_MS);
+    r = await sendToBackground({ type: 'GET_STATE' });
+  }
   if (!state.ctx.isValid) return;
   if (!r.ok) {
-    log.warn('GET_STATE failed:', r.error);
+    log.warn('GET_STATE failed after', GET_STATE_RETRY_ATTEMPTS, 'attempts:', r.error);
     return;
   }
   const { settings, authenticated, activeListId } = r.value;
@@ -133,6 +151,7 @@ async function initState(state: State): Promise<void> {
   state.enabled = settings.enabled;
   state.replaceRightRail = settings.replaceRightRail;
   state.replaceEndscreen = settings.replaceEndscreen;
+  state.clickBehavior = settings.clickBehavior;
   state.authenticated = authenticated;
   if (settings.activeProviderId) state.providerId = settings.activeProviderId;
   if (activeListId) state.listId = activeListId;
@@ -306,6 +325,7 @@ function toPanelState(state: State): PanelState {
         kind: 'list',
         tasks: state.ui.tasks,
         onComplete: (t) => void onCompleteClick(state, t),
+        onOpenTask: state.clickBehavior === 'open' ? (t) => openTask(state, t) : undefined,
         header: buildHeader(state),
       };
     case 'error':
@@ -369,6 +389,13 @@ async function onListPicked(state: State, listId: ListId): Promise<void> {
   }
 }
 
+// clickBehavior = "open": open the task in the provider's web app instead
+// of completing it. The checkbox still completes — this is the title click.
+function openTask(state: State, task: Task): void {
+  const url = getProviderDescriptor(state.providerId).taskUrl(task.projectId, task.id);
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 async function onCompleteClick(state: State, task: Task): Promise<void> {
   // Optimistic: remove from the local list and re-render.
   const previous = state.tasks;
@@ -391,4 +418,11 @@ async function onCompleteClick(state: State, task: Task): Promise<void> {
 
 function isWatchPage(): boolean {
   return window.location.pathname === WATCH_PATH;
+}
+
+// Plain setTimeout (not ctx.setTimeout): the caller re-checks
+// `state.ctx.isValid` after awaiting, so a stray timer on teardown is
+// harmless and we avoid a promise that never resolves if ctx clears it.
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
