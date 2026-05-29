@@ -17,9 +17,9 @@ import {
   type GateDecision,
 } from '@/shared/types';
 
+import { MINUTE_MS, ledgerDecision, toMin } from '../_shared/ledger';
 import type { Gate, GateContext } from '../types';
 
-const MINUTE_MS = 60_000;
 const DEFAULT_RATIO = 1;
 type FailMode = 'open' | 'closed';
 
@@ -41,8 +41,6 @@ function readConfig(config: GateConfig): AnkiGateConfig {
     failMode: config.failMode === 'open' ? 'open' : 'closed',
   };
 }
-
-const toMin = (ms: number): number => Math.round(ms / MINUTE_MS);
 
 const ankiSetupAction = { label: 'AnkiConnect setup', url: ANKI_SETUP_URL };
 
@@ -94,26 +92,12 @@ export const ankiBudgetGate: Gate = {
 
     const earnedMs = signal.value.value * cfg.ratio;
     const spentMs = ctx.youtubeUsageTodayMs;
-    const allowed = earnedMs - spentMs > 0;
-
-    if (allowed) {
-      return { allowed: true, earnedMs, spentMs, requirement: { title: 'YouTube unlocked' } };
-    }
-
     const remainingStudyMin = Math.max(1, Math.ceil((spentMs - earnedMs) / cfg.ratio / MINUTE_MS));
-    return {
-      allowed: false,
-      earnedMs,
-      spentMs,
-      requirement: {
-        title: 'Study in Anki to unlock YouTube',
-        detail: `Earned ${toMin(earnedMs)} min · watched ${toMin(spentMs)} min today. Study ~${remainingStudyMin} more min to keep watching.`,
-        progress:
-          spentMs > 0
-            ? { current: toMin(earnedMs), target: toMin(spentMs), unit: 'min' }
-            : undefined,
-        action: ankiSetupAction,
-      },
-    };
+
+    return ledgerDecision(earnedMs, spentMs, {
+      blockedTitle: 'Study in Anki to unlock YouTube',
+      blockedDetail: `Earned ${toMin(earnedMs)} min · watched ${toMin(spentMs)} min today. Study ~${remainingStudyMin} more min to keep watching.`,
+      action: ankiSetupAction,
+    });
   },
 };

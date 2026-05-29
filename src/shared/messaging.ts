@@ -55,6 +55,11 @@ export interface Schema {
   YOUTUBE_TICK: { req: { deltaMs: number }; res: null };
   // Options page "Test Anki connection" — reads the Anki study signal once.
   ANKI_TEST: { req: Empty; res: { studyMinutesToday: number } };
+  // Options page "Test bridge connection" — reads the activity bridge once
+  // for the chosen metric. The background resolves `metric` against the gate's
+  // catalogue (the ui layer can't import gates/), so the request stays to two
+  // plain strings. `value`/`unit` are in the metric's display unit.
+  HTTP_SIGNAL_TEST: { req: { url: string; metric: string }; res: { value: number; unit: string } };
 }
 
 export type MessageType = keyof Schema;

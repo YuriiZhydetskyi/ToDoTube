@@ -76,10 +76,17 @@ export type GateId = string;
 
 export const TASK_COMPLETE_GATE_ID = 'task-complete';
 export const ANKI_BUDGET_GATE_ID = 'anki-budget';
+// Earn-time-from-an-external-activity-signal gate (e.g. Garmin via a local
+// bridge): the continuous-credit ledger parameterised by "X effort = Y min".
+export const ACTIVITY_BUDGET_GATE_ID = 'activity-budget';
 
 // Signal ids that gates reference live here (shared) so a gate can name a
 // signal without importing the signals/ layer — the core bridges the two.
 export const ANKI_STUDY_SIGNAL_ID = 'anki-study-today';
+// Generic JSON-over-HTTP sensor: reads a number out of any local/remote
+// endpoint (its url + json path arrive as per-read config). The activity
+// budget gate points it at a self-hosted fitness bridge.
+export const HTTP_SIGNAL_ID = 'http-json';
 
 // Docs URL for allowlisting this extension's origin in AnkiConnect's
 // `webCorsOriginList`. UI copy referenced by both the Anki gate (block
@@ -87,6 +94,15 @@ export const ANKI_STUDY_SIGNAL_ID = 'anki-study-today';
 // *protocol* strings — endpoint, port, action names — stay single-sourced
 // in signals/anki/constants.ts.)
 export const ANKI_SETUP_URL = 'https://foosoft.net/projects/anki-connect/#configuration';
+
+// Setup guide for the activity bridge (the small self-hosted service that
+// exposes Garmin — or any fitness source — as local JSON). UI copy shared
+// by the activity-budget gate's block screen and the options page, so it
+// lives here. (The bridge endpoint/port/JSON field names stay single-sourced
+// in signals/http/constants.ts.)
+// TODO: point at the published docs URL once the repo is public.
+export const ACTIVITY_BRIDGE_SETUP_URL =
+  'https://github.com/Yurii-Stefan/ToDoTube/blob/main/bridge/garmin/README.md';
 
 // Per-gate user configuration and per-gate persisted runtime state. Both
 // are opaque to the core — each gate reads/validates its own shape. Config
@@ -116,6 +132,14 @@ export type GateConfigField =
       help?: string;
       default: string;
       options: ReadonlyArray<readonly [value: string, label: string]>;
+    }
+  | {
+      kind: 'text';
+      key: string;
+      label: string;
+      help?: string;
+      default: string;
+      placeholder?: string;
     };
 
 // What to render on the block screen when access is denied.

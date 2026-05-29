@@ -10,6 +10,7 @@ import { browser } from 'wxt/browser';
 
 import { evaluateGate, notifyTaskCompleted } from '@/core/gatekeeper/gatekeeper';
 import { addYoutubeUsageMs } from '@/core/gatekeeper/usage';
+import { METRIC_CATALOG, type MetricId } from '@/gates/activity-budget/constants';
 import { getProviderOrNull } from '@/providers/registry';
 import type { Provider } from '@/providers/types';
 import { getSignalOrNull } from '@/signals/registry';
@@ -19,7 +20,13 @@ import { getProviderDescriptor } from '@/shared/providers';
 import type { Result } from '@/shared/result';
 import { getProviderState, getSettings, setProviderState, setSettings } from '@/shared/storage';
 import { sortTasks } from '@/shared/tasks';
-import { ANKI_STUDY_SIGNAL_ID, type ListId, type ProviderId, type Task } from '@/shared/types';
+import {
+  ANKI_STUDY_SIGNAL_ID,
+  HTTP_SIGNAL_ID,
+  type ListId,
+  type ProviderId,
+  type Task,
+} from '@/shared/types';
 
 import { broadcastToYouTubeTabs } from './broadcast';
 
@@ -145,6 +152,24 @@ async function handle(req: Request): Promise<HandlerResult> {
       return ok({ studyMinutesToday: Math.round(r.value.value / 60_000) });
     }
 
+    case 'HTTP_SIGNAL_TEST': {
+      const metric = METRIC_CATALOG[req.metric as MetricId];
+      if (!metric) return err(`Unknown metric: ${req.metric}`);
+      const signal = getSignalOrNull(HTTP_SIGNAL_ID);
+      if (!signal) return err('HTTP signal unavailable');
+      const r = await signal.read({
+        url: req.url,
+        jsonPath: metric.jsonPath,
+        kind: metric.kind,
+        scale: metric.scale,
+      });
+      if (!r.ok) return err(r.error);
+      // SignalValue is canonical (ms for durationMs); show it in the metric's
+      // display unit (minutes / plain count).
+      const display = metric.kind === 'durationMs' ? r.value.value / 60_000 : r.value.value;
+      return ok({ value: Math.round(display), unit: metric.effortUnit });
+    }
+
     default:
       return err(`Unhandled message: ${(req as { type: string }).type}`);
   }
@@ -216,6 +241,7 @@ const KNOWN_TYPES: readonly MessageType[] = [
   'GATE_EVAL',
   'YOUTUBE_TICK',
   'ANKI_TEST',
+  'HTTP_SIGNAL_TEST',
 ];
 
 function isRequest(v: unknown): v is Request {

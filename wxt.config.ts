@@ -24,11 +24,14 @@ export default defineConfig({
       'https://api.ticktick.com/*',
       'https://ticktick.com/*',
     ],
-    // AnkiConnect runs a local HTTP server. The Anki budget gate needs to
-    // reach it, but only if the user enables that gate — so it's an
-    // OPTIONAL host permission, requested from the options page (a user
-    // gesture) when the gate is turned on. See docs/GATING.md.
-    optional_host_permissions: ['http://127.0.0.1:8765/*'],
+    // Local HTTP servers reached only when the matching Focus-mode gate is
+    // enabled, so these are OPTIONAL host permissions requested from the
+    // options page (a user gesture) when the gate is turned on. The literals
+    // mirror ANKI_HOST_PERMISSION (signals/anki/constants.ts) and
+    // BRIDGE_HOST_PERMISSION (gates/activity-budget/constants.ts). See
+    // docs/GATING.md.
+    //   8765 = AnkiConnect · 8930 = activity bridge (e.g. Garmin)
+    optional_host_permissions: ['http://127.0.0.1:8765/*', 'http://127.0.0.1:8930/*'],
     // Stable Firefox add-on ID so `browser.identity.getRedirectURL()`
     // returns a stable URI we can register with TickTick.
     browser_specific_settings: {

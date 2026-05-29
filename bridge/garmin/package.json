@@ -1,0 +1,18 @@
+{
+  "name": "todotube-garmin-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Self-hosted bridge that exposes today's Garmin Connect metrics as local JSON for the ToDoTube activity-budget gate.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "start:no-env": "node server.js"
+  },
+  "dependencies": {
+    "garmin-connect": "^1.6.0"
+  }
+}

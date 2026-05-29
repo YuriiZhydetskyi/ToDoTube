@@ -18,6 +18,9 @@ export default tseslint.config(
       'coverage/**',
       'web-ext-artifacts/**',
       'dist/**',
+      // The activity bridge is a separate self-hosted package with its own
+      // toolchain; it isn't part of the extension build or tsconfig.
+      'bridge/**',
     ],
   },
   js.configs.recommended,

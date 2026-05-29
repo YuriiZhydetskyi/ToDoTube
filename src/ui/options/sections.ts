@@ -11,6 +11,7 @@ import { sendToBackground } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
 import { getProviderState, setProviderState, setSettings } from '@/shared/storage';
 import {
+  ACTIVITY_BUDGET_GATE_ID,
   ANKI_BUDGET_GATE_ID,
   DEFAULT_GATING,
   type GateConfig,
@@ -22,14 +23,19 @@ import {
 
 import { el, pill, row } from './dom';
 
-// Anki-specific capabilities the orchestrator (core/options.ts) injects, so
-// this ui-layer file needs neither the signals/ layer nor wxt/browser. The
+// Gate-setup capabilities the orchestrator (core/options.ts) injects, so this
+// ui-layer file needs neither the signals/gates layers nor wxt/browser. The
 // permission request must run inside the click handler to keep the user
-// gesture, so these are passed as ready-to-call callbacks.
+// gesture, so these are passed as ready-to-call callbacks. Host origins are
+// opaque strings supplied by core (ui can't import the layers that own them).
 export interface FocusSectionDeps {
-  setupUrl: string;
-  hasAnkiPermission: () => Promise<boolean>;
-  requestAnkiPermission: () => Promise<boolean>;
+  ankiSetupUrl: string;
+  bridgeSetupUrl: string;
+  // Anki's fixed localhost origin pattern (the bridge's is derived from its
+  // user-configured URL at click time).
+  ankiOrigin: string;
+  hasHostPermission: (origin: string) => Promise<boolean>;
+  requestHostPermission: (origin: string) => Promise<boolean>;
 }
 
 const PROVIDER_ID: ProviderId = DEFAULT_PROVIDER_ID;
@@ -252,11 +258,27 @@ export function renderFocusSection(
     }
   }
 
-  // The Anki gate has gate-specific setup (localhost permission + connection
-  // test + CORS guide) beyond its plain config fields.
-  if (activeGate?.id === ANKI_BUDGET_GATE_ID && deps) {
+  // A couple of gates have setup beyond their plain config fields (host
+  // permission + a connection test). These stay special-cased by id, like
+  // the rest of this file's gate-specific touches.
+  if (deps && activeGate?.id === ANKI_BUDGET_GATE_ID) {
     container.append(renderAnkiSetup(deps));
   }
+  if (deps && activeGate?.id === ACTIVITY_BUDGET_GATE_ID) {
+    const cfg = effectiveConfig(activeGate.configSchema, gating.gateConfigs[activeGate.id] ?? {});
+    container.append(renderBridgeSetup(deps, cfg));
+  }
+}
+
+// Merge a gate's config bag over its schema defaults so setup helpers see the
+// values the user would get even before they touch a field.
+function effectiveConfig(
+  schema: readonly GateConfigField[] | undefined,
+  cfg: GateConfig,
+): GateConfig {
+  const merged: GateConfig = {};
+  for (const field of schema ?? []) merged[field.key] = field.default;
+  return { ...merged, ...cfg };
 }
 
 // Render one config field from a gate's schema.
@@ -278,6 +300,14 @@ function renderConfigField(
       field.help,
     );
   }
+  if (field.kind === 'text') {
+    const value = typeof cfg[field.key] === 'string' ? (cfg[field.key] as string) : field.default;
+    return row(
+      field.label,
+      textInput(value, field.placeholder ?? '', (v) => setCfg({ [field.key]: v })),
+      field.help,
+    );
+  }
   const current = typeof cfg[field.key] === 'string' ? (cfg[field.key] as string) : field.default;
   return row(
     field.label,
@@ -291,14 +321,9 @@ function renderConfigField(
 // ANKI_TEST and uses the injected permission callbacks (kept in the click
 // handler so the browser sees a user gesture).
 function renderAnkiSetup(deps: FocusSectionDeps): HTMLElement {
-  const wrap = el('div', { class: 'tt-row tt-row--vertical' });
-  const status = el('div', { class: 'tt-advanced__status' });
+  const { wrap, setStatus, btnRow } = setupBlock();
 
-  const setStatus = (text: string, kind: 'ok' | 'warn' | 'muted' = 'muted'): void => {
-    status.replaceChildren(pill(text, kind));
-  };
-
-  void deps.hasAnkiPermission().then((granted) => {
+  void deps.hasHostPermission(deps.ankiOrigin).then((granted) => {
     setStatus(
       granted ? 'Localhost access granted' : 'Localhost access not granted yet',
       granted ? 'ok' : 'warn',
@@ -311,7 +336,7 @@ function renderAnkiSetup(deps: FocusSectionDeps): HTMLElement {
   });
   allowBtn.addEventListener('click', () => {
     // Call straight away — no await before it — to preserve the user gesture.
-    void deps.requestAnkiPermission().then((granted) => {
+    void deps.requestHostPermission(deps.ankiOrigin).then((granted) => {
       setStatus(
         granted ? 'Localhost access granted' : 'Permission denied',
         granted ? 'ok' : 'warn',
@@ -330,7 +355,8 @@ function renderAnkiSetup(deps: FocusSectionDeps): HTMLElement {
     }
   });
 
-  wrap.append(
+  btnRow.append(allowBtn, testBtn);
+  wrap.prepend(
     el(
       'span',
       { class: 'tt-row__label' },
@@ -340,13 +366,101 @@ function renderAnkiSetup(deps: FocusSectionDeps): HTMLElement {
         { class: 'tt-row__help' },
         'Requires Anki running with the AnkiConnect add-on, and this ',
         "extension's origin added to AnkiConnect's webCorsOriginList. ",
-        link('Setup guide', deps.setupUrl),
+        link('Setup guide', deps.ankiSetupUrl),
       ),
     ),
-    el('div', { class: 'tt-btn-row' }, allowBtn, testBtn),
-    status,
   );
   return wrap;
+}
+
+// Activity-bridge helper block: request access to the (user-configured)
+// bridge origin, test the connection for the chosen metric, and link to the
+// bridge setup guide. The origin is derived from the bridge URL at click time
+// so a customised URL still gets the right host permission.
+function renderBridgeSetup(deps: FocusSectionDeps, cfg: GateConfig): HTMLElement {
+  const { wrap, setStatus, btnRow } = setupBlock();
+
+  const bridgeUrl = typeof cfg.bridgeUrl === 'string' ? cfg.bridgeUrl : '';
+  const metric = typeof cfg.metric === 'string' ? cfg.metric : '';
+
+  // `${origin}/*` host pattern from the URL; null if the URL is unparseable.
+  const originPattern = (() => {
+    try {
+      return `${new URL(bridgeUrl).origin}/*`;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (originPattern) {
+    void deps.hasHostPermission(originPattern).then((granted) => {
+      setStatus(
+        granted ? 'Bridge access granted' : 'Bridge access not granted yet',
+        granted ? 'ok' : 'warn',
+      );
+    });
+  } else {
+    setStatus('Enter a valid bridge URL above', 'warn');
+  }
+
+  const allowBtn = el('button', {
+    text: 'Allow access to bridge',
+    class: 'tt-btn tt-btn--secondary',
+  });
+  allowBtn.addEventListener('click', () => {
+    if (!originPattern) return;
+    void deps.requestHostPermission(originPattern).then((granted) => {
+      setStatus(granted ? 'Bridge access granted' : 'Permission denied', granted ? 'ok' : 'warn');
+    });
+  });
+
+  const testBtn = el('button', {
+    text: 'Test bridge connection',
+    class: 'tt-btn tt-btn--secondary',
+  });
+  testBtn.addEventListener('click', async () => {
+    setStatus('Testing…', 'muted');
+    const r = await sendToBackground({ type: 'HTTP_SIGNAL_TEST', url: bridgeUrl, metric });
+    if (r.ok) {
+      setStatus(`Connected — ${r.value.value} ${r.value.unit} today`, 'ok');
+    } else {
+      setStatus(`Failed: ${r.error}`, 'warn');
+    }
+  });
+
+  btnRow.append(allowBtn, testBtn);
+  wrap.prepend(
+    el(
+      'span',
+      { class: 'tt-row__label' },
+      'Activity bridge',
+      el(
+        'span',
+        { class: 'tt-row__help' },
+        'Requires a local fitness bridge running at the URL above. ',
+        link('Setup guide', deps.bridgeSetupUrl),
+      ),
+    ),
+  );
+  return wrap;
+}
+
+// Shared scaffold for a gate-setup block: a vertical row with a button row
+// and a status pill, plus a setter that swaps the pill.
+function setupBlock(): {
+  wrap: HTMLElement;
+  status: HTMLElement;
+  setStatus: (text: string, kind?: 'ok' | 'warn' | 'muted') => void;
+  btnRow: HTMLElement;
+} {
+  const wrap = el('div', { class: 'tt-row tt-row--vertical' });
+  const status = el('div', { class: 'tt-advanced__status' });
+  const btnRow = el('div', { class: 'tt-btn-row' });
+  const setStatus = (text: string, kind: 'ok' | 'warn' | 'muted' = 'muted'): void => {
+    status.replaceChildren(pill(text, kind));
+  };
+  wrap.append(btnRow, status);
+  return { wrap, status, setStatus, btnRow };
 }
 
 export function renderAdvancedSection(container: HTMLElement, settings: Settings): void {
@@ -537,6 +651,21 @@ function numberInput(
     const v = Number(input.value);
     if (Number.isFinite(v) && v >= min && v <= max) onChange(v);
   });
+  return input;
+}
+
+function textInput(
+  initial: string,
+  placeholder: string,
+  onChange: (v: string) => void,
+): HTMLInputElement {
+  const input = el('input', {
+    type: 'text',
+    class: 'tt-input',
+    placeholder,
+  }) as HTMLInputElement;
+  input.value = initial;
+  input.addEventListener('change', () => onChange(input.value.trim()));
   return input;
 }
 

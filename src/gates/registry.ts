@@ -4,12 +4,14 @@
 // to AVAILABLE_GATES so the options page can offer it.
 
 import {
+  ACTIVITY_BUDGET_GATE_ID,
   ANKI_BUDGET_GATE_ID,
   TASK_COMPLETE_GATE_ID,
   type GateConfigField,
   type GateId,
 } from '@/shared/types';
 
+import { activityBudgetGate } from './activity-budget/gate';
 import { ankiBudgetGate } from './anki-budget/gate';
 import { taskCompleteGate } from './task-complete/gate';
 import type { Gate } from './types';
@@ -20,6 +22,8 @@ export function getGateOrNull(id: GateId | null): Gate | null {
       return taskCompleteGate;
     case ANKI_BUDGET_GATE_ID:
       return ankiBudgetGate;
+    case ACTIVITY_BUDGET_GATE_ID:
+      return activityBudgetGate;
     default:
       return null;
   }
@@ -42,4 +46,5 @@ function describe(gate: Gate): GateDescriptor {
 export const AVAILABLE_GATES: readonly GateDescriptor[] = [
   describe(taskCompleteGate),
   describe(ankiBudgetGate),
+  describe(activityBudgetGate),
 ];

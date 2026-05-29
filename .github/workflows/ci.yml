@@ -70,6 +70,24 @@ jobs:
           fi
           echo "Anki constant guard passed."
 
+      # Activity bridge constant guard — the bridge endpoint must live ONLY in
+      # src/gates/activity-budget/constants.ts (same "no magic constants" rule).
+      # The bridge serves a fitness source (e.g. Garmin), so the contract is
+      # the gate's domain. (bridge/ is a separate package outside src/.)
+      - name: Activity bridge constant guard
+        run: |
+          set -e
+          leaked=$(grep -RIn --include='*.ts' \
+                     -E '127\.0\.0\.1:8930' src/ \
+                   | grep -vE 'src/gates/activity-budget/constants\.ts' \
+                   || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::Activity bridge endpoint leaked outside gates/activity-budget/constants.ts:"
+            echo "$leaked"
+            exit 1
+          fi
+          echo "Activity bridge constant guard passed."
+
       - name: Build (Chrome)
         run: pnpm build
 
