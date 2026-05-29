@@ -1,0 +1,95 @@
+// Anki budget gate — the continuous-credit case of the ledger model.
+//
+// earned = (Anki minutes studied today) × ratio
+// spent  = (YouTube minutes watched today)
+// allowed while earned − spent > 0.
+//
+// When Anki is unreachable the gate applies the user's fail mode (default
+// fail-closed: block, since "just close Anki" would otherwise be a trivial
+// bypass). The Anki value arrives via ctx.readSignal — the gate never talks
+// to AnkiConnect directly (that's the signals/ layer).
+
+import {
+  ANKI_BUDGET_GATE_ID,
+  ANKI_SETUP_URL,
+  ANKI_STUDY_SIGNAL_ID,
+  type GateConfig,
+  type GateDecision,
+} from '@/shared/types';
+
+import type { Gate, GateContext } from '../types';
+
+const MINUTE_MS = 60_000;
+const DEFAULT_RATIO = 1;
+type FailMode = 'open' | 'closed';
+
+interface AnkiGateConfig {
+  // YouTube minutes earned per Anki minute studied. 1 = parity.
+  ratio: number;
+  // What to do when AnkiConnect can't be reached.
+  failMode: FailMode;
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function readConfig(config: GateConfig): AnkiGateConfig {
+  const ratio = numberOr(config.ratio, DEFAULT_RATIO);
+  return {
+    ratio: ratio > 0 ? ratio : DEFAULT_RATIO,
+    failMode: config.failMode === 'open' ? 'open' : 'closed',
+  };
+}
+
+const toMin = (ms: number): number => Math.round(ms / MINUTE_MS);
+
+const ankiSetupAction = { label: 'AnkiConnect setup', url: ANKI_SETUP_URL };
+
+export const ankiBudgetGate: Gate = {
+  id: ANKI_BUDGET_GATE_ID,
+  displayName: 'Earn time with Anki',
+
+  async evaluate(ctx: GateContext): Promise<GateDecision> {
+    const cfg = readConfig(ctx.config);
+
+    const signal = await ctx.readSignal(ANKI_STUDY_SIGNAL_ID);
+    if (!signal.ok) {
+      if (cfg.failMode === 'open') {
+        return { allowed: true, requirement: { title: 'YouTube unlocked' } };
+      }
+      return {
+        allowed: false,
+        requirement: {
+          title: 'Open Anki to unlock YouTube',
+          detail: `Couldn't reach Anki (${signal.error}). Start Anki, install AnkiConnect, and allow this extension in its CORS list.`,
+          action: ankiSetupAction,
+        },
+      };
+    }
+
+    const earnedMs = signal.value.value * cfg.ratio;
+    const spentMs = ctx.youtubeUsageTodayMs;
+    const allowed = earnedMs - spentMs > 0;
+
+    if (allowed) {
+      return { allowed: true, earnedMs, spentMs, requirement: { title: 'YouTube unlocked' } };
+    }
+
+    const remainingStudyMin = Math.max(1, Math.ceil((spentMs - earnedMs) / cfg.ratio / MINUTE_MS));
+    return {
+      allowed: false,
+      earnedMs,
+      spentMs,
+      requirement: {
+        title: 'Study in Anki to unlock YouTube',
+        detail: `Earned ${toMin(earnedMs)} min · watched ${toMin(spentMs)} min today. Study ~${remainingStudyMin} more min to keep watching.`,
+        progress:
+          spentMs > 0
+            ? { current: toMin(earnedMs), target: toMin(spentMs), unit: 'min' }
+            : undefined,
+        action: ankiSetupAction,
+      },
+    };
+  },
+};

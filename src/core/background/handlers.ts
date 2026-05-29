@@ -8,15 +8,25 @@
 
 import { browser } from 'wxt/browser';
 
+import { evaluateGate, notifyTaskCompleted } from '@/core/gatekeeper/gatekeeper';
+import { addYoutubeUsageMs } from '@/core/gatekeeper/usage';
 import { getProviderOrNull } from '@/providers/registry';
 import type { Provider } from '@/providers/types';
+import { getSignalOrNull } from '@/signals/registry';
 import { log } from '@/shared/logger';
 import { err, ok, type Broadcast, type MessageType, type Request } from '@/shared/messaging';
 import { getProviderDescriptor } from '@/shared/providers';
 import type { Result } from '@/shared/result';
 import { getProviderState, getSettings, setProviderState, setSettings } from '@/shared/storage';
 import { sortTasks } from '@/shared/tasks';
-import type { ListId, ProviderId, Task } from '@/shared/types';
+import {
+  ANKI_STUDY_SIGNAL_ID,
+  DEFAULT_GATING,
+  type GatingSettings,
+  type ListId,
+  type ProviderId,
+  type Task,
+} from '@/shared/types';
 
 import { broadcastToYouTubeTabs } from './broadcast';
 
@@ -69,6 +79,10 @@ async function handle(req: Request): Promise<HandlerResult> {
       if (!provider) return err(`Unknown provider: ${req.providerId}`);
       const r = await provider.completeTask(req.projectId, req.taskId);
       if (!r.ok) return err(r.error);
+      // Completing a task may satisfy the active gate — forward the event
+      // and broadcast the (possibly unlocked) decision to all YouTube tabs.
+      const gate = await notifyTaskCompleted(req.providerId, req.taskId);
+      void broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: gate });
       return ok(null);
     }
 
@@ -120,9 +134,62 @@ async function handle(req: Request): Promise<HandlerResult> {
       return ok(r.value);
     }
 
+    case 'GATE_EVAL':
+      return ok(await evaluateGate());
+
+    case 'GATE_SET_ENABLED': {
+      await updateGating({ enabled: req.enabled });
+      await broadcastGate();
+      return ok(null);
+    }
+
+    case 'GATE_SET_ACTIVE': {
+      await updateGating({ activeGateId: req.gateId });
+      await broadcastGate();
+      return ok(null);
+    }
+
+    case 'GATE_SET_CONFIG': {
+      const gating = await getGating();
+      await updateGating({
+        gateConfigs: { ...gating.gateConfigs, [req.gateId]: req.config },
+      });
+      await broadcastGate();
+      return ok(null);
+    }
+
+    case 'YOUTUBE_TICK': {
+      // Accrue watch time; re-blocking on budget exhaustion is handled by
+      // the 1-minute gate alarm, so we don't re-evaluate on every tick.
+      await addYoutubeUsageMs(Date.now(), req.deltaMs);
+      return ok(null);
+    }
+
+    case 'ANKI_TEST': {
+      const signal = getSignalOrNull(ANKI_STUDY_SIGNAL_ID);
+      if (!signal) return err('Anki signal unavailable');
+      const r = await signal.read();
+      if (!r.ok) return err(r.error);
+      return ok({ studyMinutesToday: Math.round(r.value.value / 60_000) });
+    }
+
     default:
       return err(`Unhandled message: ${(req as { type: string }).type}`);
   }
+}
+
+async function getGating(): Promise<GatingSettings> {
+  const settings = await getSettings();
+  return settings.gating ?? DEFAULT_GATING;
+}
+
+async function updateGating(partial: Partial<GatingSettings>): Promise<void> {
+  const current = await getGating();
+  await setSettings({ gating: { ...current, ...partial } });
+}
+
+async function broadcastGate(): Promise<void> {
+  void broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: await evaluateGate() });
 }
 
 /**
@@ -188,6 +255,12 @@ const KNOWN_TYPES: readonly MessageType[] = [
   'REFRESH_NOW',
   'SET_ENABLED',
   'SET_ACTIVE_LIST',
+  'GATE_EVAL',
+  'GATE_SET_ENABLED',
+  'GATE_SET_ACTIVE',
+  'GATE_SET_CONFIG',
+  'YOUTUBE_TICK',
+  'ANKI_TEST',
 ];
 
 function isRequest(v: unknown): v is Request {

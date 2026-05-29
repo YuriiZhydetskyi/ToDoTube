@@ -41,6 +41,8 @@ export default tseslint.config(
         { type: 'entry', pattern: 'src/entrypoints/**/*', mode: 'file' },
         { type: 'shared', pattern: 'src/shared/**/*', mode: 'file' },
         { type: 'providers', pattern: 'src/providers/**/*', mode: 'file' },
+        { type: 'signals', pattern: 'src/signals/**/*', mode: 'file' },
+        { type: 'gates', pattern: 'src/gates/**/*', mode: 'file' },
         { type: 'surfaces', pattern: 'src/surfaces/**/*', mode: 'file' },
         { type: 'ui', pattern: 'src/ui/**/*', mode: 'file' },
         { type: 'core', pattern: 'src/core/**/*', mode: 'file' },
@@ -64,12 +66,17 @@ export default tseslint.config(
           rules: [
             { from: { type: 'shared' }, allow: { to: { type: ['shared'] } } },
             { from: { type: 'providers' }, allow: { to: { type: ['providers', 'shared'] } } },
+            // signals + gates are pure (like providers): they may use shared
+            // and their own layer, nothing else. Gates receive signal VALUES
+            // via GateContext (a shared DTO), so they need no edge to signals.
+            { from: { type: 'signals' }, allow: { to: { type: ['signals', 'shared'] } } },
+            { from: { type: 'gates' }, allow: { to: { type: ['gates', 'shared'] } } },
             { from: { type: 'surfaces' }, allow: { to: { type: ['surfaces', 'shared'] } } },
             { from: { type: 'ui' }, allow: { to: { type: ['ui', 'shared'] } } },
             {
               from: { type: 'core' },
               allow: {
-                to: { type: ['core', 'shared', 'providers', 'surfaces', 'ui'] },
+                to: { type: ['core', 'shared', 'providers', 'signals', 'gates', 'surfaces', 'ui'] },
               },
             },
             { from: { type: 'entry' }, allow: { to: { type: ['entry', 'shared', 'core'] } } },

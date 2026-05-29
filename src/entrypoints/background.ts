@@ -4,6 +4,7 @@
 
 import { broadcastToYouTubeTabs, registerHandlers, runRefresh } from '@/core/background/handlers';
 import { onRefreshAlarm, scheduleRefresh } from '@/core/background/refresh';
+import { evaluateGate, onGateAlarm, scheduleGateAlarm } from '@/core/gatekeeper/gatekeeper';
 import { log, setVerbose } from '@/shared/logger';
 import { PROVIDER_IDS } from '@/shared/providers';
 import { getSettings, onProviderStateChange, onSettingsChange } from '@/shared/storage';
@@ -22,6 +23,12 @@ async function init(): Promise<void> {
   await scheduleRefresh(settings);
   onRefreshAlarm(() => runRefresh());
 
+  // Gating: a 1-minute backstop that re-evaluates the active gate and
+  // pushes the decision to all YouTube tabs, so an expired session
+  // eventually re-blocks even without a tab-local timer.
+  await scheduleGateAlarm();
+  onGateAlarm(() => broadcastGateState());
+
   onSettingsChange((next, prev) => {
     setVerbose(next.verboseLogging);
 
@@ -31,6 +38,8 @@ async function init(): Promise<void> {
 
     // Always broadcast — content scripts re-render off this signal.
     void broadcastToYouTubeTabs({ type: 'SETTINGS_CHANGED', settings: next });
+    // Gating config lives in settings too; refresh gate decisions.
+    void broadcastGateState();
   });
 
   // Provider-state changes (especially activeListId set from the
@@ -47,4 +56,8 @@ async function init(): Promise<void> {
       });
     });
   }
+}
+
+async function broadcastGateState(): Promise<void> {
+  await broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: await evaluateGate() });
 }

@@ -10,9 +10,27 @@
 import { sendToBackground } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
 import { getProviderState, setProviderState, setSettings } from '@/shared/storage';
-import type { ProviderId, Settings } from '@/shared/types';
+import {
+  ANKI_BUDGET_GATE_ID,
+  DEFAULT_GATING,
+  TASK_COMPLETE_GATE_ID,
+  type GateConfig,
+  type GatingSettings,
+  type ProviderId,
+  type Settings,
+} from '@/shared/types';
 
 import { el, pill, row } from './dom';
+
+// Anki-specific capabilities the orchestrator (core/options.ts) injects, so
+// this ui-layer file needs neither the signals/ layer nor wxt/browser. The
+// permission request must run inside the click handler to keep the user
+// gesture, so these are passed as ready-to-call callbacks.
+export interface FocusSectionDeps {
+  setupUrl: string;
+  hasAnkiPermission: () => Promise<boolean>;
+  requestAnkiPermission: () => Promise<boolean>;
+}
 
 const PROVIDER_ID: ProviderId = DEFAULT_PROVIDER_ID;
 
@@ -160,6 +178,175 @@ export function renderBehaviorSection(container: HTMLElement, settings: Settings
       ),
     ),
   );
+}
+
+// Gating ("Focus mode"). Gate-agnostic UI: the available gates are passed
+// in by the orchestrator (core/options.ts) so this ui-layer file never
+// imports the gates/ layer. Per-gate config fields are still special-cased
+// for the one gate that has them; when more gates gain settings, replace
+// that block with a per-gate config schema carried on the descriptor.
+export function renderFocusSection(
+  container: HTMLElement,
+  settings: Settings,
+  gates: ReadonlyArray<{ id: string; displayName: string }>,
+  deps?: FocusSectionDeps,
+): void {
+  container.replaceChildren();
+  container.append(el('h2', { class: 'tt-card__title', text: 'Focus mode' }));
+
+  const gating = settings.gating ?? DEFAULT_GATING;
+
+  // Re-render in place after a structural change (toggling on/off, switching
+  // gate) so the dependent config rows appear/disappear.
+  const reRender = (next: GatingSettings): void =>
+    renderFocusSection(container, { ...settings, gating: next }, gates, deps);
+
+  const persist = (patch: Partial<GatingSettings>): GatingSettings => {
+    const next = { ...gating, ...patch };
+    void setSettings({ gating: next });
+    return next;
+  };
+
+  container.append(
+    row(
+      'Block YouTube until a condition is met',
+      checkbox(gating.enabled, (v) => {
+        // Enabling with no gate chosen yet defaults to the first available.
+        const activeGateId =
+          v && !gating.activeGateId ? (gates[0]?.id ?? null) : gating.activeGateId;
+        reRender(persist({ enabled: v, activeGateId }));
+      }),
+      'When on, all of YouTube is blocked until you satisfy the chosen condition.',
+    ),
+  );
+
+  if (!gating.enabled) return;
+
+  if (gates.length > 1) {
+    container.append(
+      row(
+        'Unlock condition',
+        enumSelect(
+          gating.activeGateId ?? gates[0]?.id ?? '',
+          gates.map((g) => [g.id, g.displayName] as const),
+          (v) => reRender(persist({ activeGateId: v })),
+        ),
+      ),
+    );
+  }
+
+  if (gating.activeGateId === TASK_COMPLETE_GATE_ID) {
+    const cfg = gating.gateConfigs[TASK_COMPLETE_GATE_ID] ?? {};
+    const setCfg = (patch: GateConfig): void => {
+      persist({
+        gateConfigs: { ...gating.gateConfigs, [TASK_COMPLETE_GATE_ID]: { ...cfg, ...patch } },
+      });
+    };
+    container.append(
+      row(
+        'Tasks to complete',
+        numberInput(cfgNumber(cfg.tasksRequired, 1), 1, 50, (v) => setCfg({ tasksRequired: v })),
+        'How many tasks you must finish to unlock a viewing session.',
+      ),
+      row(
+        'Minutes unlocked',
+        numberInput(cfgNumber(cfg.grantMinutes, 30), 1, 600, (v) => setCfg({ grantMinutes: v })),
+        'How long YouTube stays open once the condition is met.',
+      ),
+    );
+  }
+
+  if (gating.activeGateId === ANKI_BUDGET_GATE_ID) {
+    const cfg = gating.gateConfigs[ANKI_BUDGET_GATE_ID] ?? {};
+    const setCfg = (patch: GateConfig): void => {
+      persist({
+        gateConfigs: { ...gating.gateConfigs, [ANKI_BUDGET_GATE_ID]: { ...cfg, ...patch } },
+      });
+    };
+    container.append(
+      row(
+        'YouTube minutes per Anki minute',
+        numberInput(cfgNumber(cfg.ratio, 1), 1, 60, (v) => setCfg({ ratio: v })),
+        'Earned viewing time per minute studied. 1 = study 15 min to watch 15 min.',
+      ),
+      row(
+        'When Anki is closed',
+        enumSelect(
+          cfg.failMode === 'open' ? 'open' : 'closed',
+          [
+            ['closed', 'Block YouTube'],
+            ['open', 'Allow YouTube'],
+          ],
+          (v) => setCfg({ failMode: v }),
+        ),
+        'Anki must be running for its study time to count.',
+      ),
+    );
+    if (deps) container.append(renderAnkiSetup(deps));
+  }
+}
+
+// Anki connection helper block: request the localhost permission, test the
+// connection, and link to the CORS setup docs. Talks to the background via
+// ANKI_TEST and uses the injected permission callbacks (kept in the click
+// handler so the browser sees a user gesture).
+function renderAnkiSetup(deps: FocusSectionDeps): HTMLElement {
+  const wrap = el('div', { class: 'tt-row tt-row--vertical' });
+  const status = el('div', { class: 'tt-advanced__status' });
+
+  const setStatus = (text: string, kind: 'ok' | 'warn' | 'muted' = 'muted'): void => {
+    status.replaceChildren(pill(text, kind));
+  };
+
+  void deps.hasAnkiPermission().then((granted) => {
+    setStatus(
+      granted ? 'Localhost access granted' : 'Localhost access not granted yet',
+      granted ? 'ok' : 'warn',
+    );
+  });
+
+  const allowBtn = el('button', {
+    text: 'Allow access to Anki',
+    class: 'tt-btn tt-btn--secondary',
+  });
+  allowBtn.addEventListener('click', () => {
+    // Call straight away — no await before it — to preserve the user gesture.
+    void deps.requestAnkiPermission().then((granted) => {
+      setStatus(
+        granted ? 'Localhost access granted' : 'Permission denied',
+        granted ? 'ok' : 'warn',
+      );
+    });
+  });
+
+  const testBtn = el('button', { text: 'Test Anki connection', class: 'tt-btn tt-btn--secondary' });
+  testBtn.addEventListener('click', async () => {
+    setStatus('Testing…', 'muted');
+    const r = await sendToBackground({ type: 'ANKI_TEST' });
+    if (r.ok) {
+      setStatus(`Connected — ${r.value.studyMinutesToday} min studied today`, 'ok');
+    } else {
+      setStatus(`Failed: ${r.error}`, 'warn');
+    }
+  });
+
+  wrap.append(
+    el(
+      'span',
+      { class: 'tt-row__label' },
+      'Anki connection',
+      el(
+        'span',
+        { class: 'tt-row__help' },
+        'Requires Anki running with the AnkiConnect add-on, and this ',
+        "extension's origin added to AnkiConnect's webCorsOriginList. ",
+        link('Setup guide', deps.setupUrl),
+      ),
+    ),
+    el('div', { class: 'tt-btn-row' }, allowBtn, testBtn),
+    status,
+  );
+  return wrap;
 }
 
 export function renderAdvancedSection(container: HTMLElement, settings: Settings): void {
@@ -313,6 +500,12 @@ export function renderAboutSection(container: HTMLElement): void {
   );
 
   container.append(version, links);
+}
+
+// Reads a number out of an opaque gate-config bag, falling back when the
+// key is missing or not a finite number.
+function cfgNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 function checkbox(initial: boolean, onChange: (v: boolean) => void): HTMLInputElement {

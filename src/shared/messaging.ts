@@ -8,7 +8,16 @@
 
 import { browser } from 'wxt/browser';
 import { err, ok, type Result } from './result';
-import type { ListId, Project, ProviderId, Settings, Task } from './types';
+import type {
+  GateConfig,
+  GateEvalResult,
+  GateId,
+  ListId,
+  Project,
+  ProviderId,
+  Settings,
+  Task,
+} from './types';
 
 export interface GlobalState {
   settings: Settings;
@@ -43,6 +52,19 @@ export interface Schema {
   REFRESH_NOW: { req: { providerId: ProviderId; listId: ListId }; res: Task[] };
   SET_ENABLED: { req: { enabled: boolean }; res: null };
   SET_ACTIVE_LIST: { req: { providerId: ProviderId; listId: ListId }; res: null };
+
+  // Gating. GATE_EVAL is what the site-wide content script polls to learn
+  // whether to show the block overlay.
+  GATE_EVAL: { req: Empty; res: GateEvalResult };
+  GATE_SET_ENABLED: { req: { enabled: boolean }; res: null };
+  GATE_SET_ACTIVE: { req: { gateId: GateId | null }; res: null };
+  GATE_SET_CONFIG: { req: { gateId: GateId; config: GateConfig }; res: null };
+
+  // Content scripts report active YouTube watch time (the "spent" side of
+  // budget gates). The background accrues it against the local-day total.
+  YOUTUBE_TICK: { req: { deltaMs: number }; res: null };
+  // Options page "Test Anki connection" — reads the Anki study signal once.
+  ANKI_TEST: { req: Empty; res: { studyMinutesToday: number } };
 }
 
 export type MessageType = keyof Schema;
@@ -58,7 +80,8 @@ export type Broadcast =
   | { type: 'TASKS_UPDATED'; providerId: ProviderId; listId: ListId; tasks: Task[] }
   | { type: 'AUTH_REQUIRED'; providerId: ProviderId }
   | { type: 'SETTINGS_CHANGED'; settings: Settings }
-  | { type: 'LIST_CHANGED'; providerId: ProviderId; listId: ListId };
+  | { type: 'LIST_CHANGED'; providerId: ProviderId; listId: ListId }
+  | { type: 'GATE_CHANGED'; result: GateEvalResult };
 
 export async function sendToBackground<T extends MessageType>(
   req: Request<T>,
@@ -101,6 +124,7 @@ function isBroadcast(v: unknown): v is Broadcast {
     t === 'TASKS_UPDATED' ||
     t === 'AUTH_REQUIRED' ||
     t === 'SETTINGS_CHANGED' ||
-    t === 'LIST_CHANGED'
+    t === 'LIST_CHANGED' ||
+    t === 'GATE_CHANGED'
   );
 }

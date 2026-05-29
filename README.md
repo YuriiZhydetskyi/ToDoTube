@@ -69,6 +69,11 @@ Three-layer model with hard ESLint-enforced import boundaries:
 
 YouTube selectors live in **exactly one place**: `src/surfaces/desktop-watch/selectors.ts`. See [docs/SELECTORS.md](docs/SELECTORS.md) for how the multi-strategy resolver works and how to author an override when YouTube changes things.
 
+The optional **Focus mode** (block YouTube until a condition is met) adds two
+more pluggable layers next to `providers/`: `signals/` (read-only sensors)
+and `gates/` (access policies), orchestrated by `core/gatekeeper/`. See
+[docs/GATING.md](docs/GATING.md).
+
 ## Features (v1)
 
 - Replaces YouTube's right-side recommendation rail and end-of-video grid with your TickTick task list on every watch page.
