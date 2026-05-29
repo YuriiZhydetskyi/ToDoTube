@@ -52,6 +52,24 @@ jobs:
           fi
           echo "Selector guard passed."
 
+      # Anki constant guard — the AnkiConnect endpoint must live ONLY in
+      # src/signals/anki/constants.ts (the "no magic constants" rule, same as
+      # the selector guard). Action names are already centralized via the
+      # typed ANKI_ACTIONS object, so we only need to pin the endpoint string.
+      - name: Anki constant guard
+        run: |
+          set -e
+          leaked=$(grep -RIn --include='*.ts' \
+                     -E '127\.0\.0\.1:8765' src/ \
+                   | grep -vE 'src/signals/anki/constants\.ts' \
+                   || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::AnkiConnect endpoint leaked outside signals/anki/constants.ts:"
+            echo "$leaked"
+            exit 1
+          fi
+          echo "Anki constant guard passed."
+
       - name: Build (Chrome)
         run: pnpm build
 
