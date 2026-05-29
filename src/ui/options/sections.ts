@@ -266,8 +266,8 @@ export function renderFocusSection(
     container.append(
       row(
         'YouTube minutes per Anki minute',
-        numberInput(cfgNumber(cfg.ratio, 1), 1, 60, (v) => setCfg({ ratio: v })),
-        'Earned viewing time per minute studied. 1 = study 15 min to watch 15 min.',
+        numberInput(cfgNumber(cfg.ratio, 1), 0.25, 10, (v) => setCfg({ ratio: v }), 0.25),
+        'Earned viewing time per minute studied. 1 = parity; 0.5 = study twice as long as you watch.',
       ),
       row(
         'When Anki is closed',
@@ -523,12 +523,14 @@ function numberInput(
   min: number,
   max: number,
   onChange: (v: number) => void,
+  step = 1,
 ): HTMLInputElement {
   const input = el('input', {
     type: 'number',
     class: 'tt-input',
     min: String(min),
     max: String(max),
+    step: String(step),
   }) as HTMLInputElement;
   input.value = String(initial);
   input.addEventListener('change', () => {

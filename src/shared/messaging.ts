@@ -8,16 +8,7 @@
 
 import { browser } from 'wxt/browser';
 import { err, ok, type Result } from './result';
-import type {
-  GateConfig,
-  GateEvalResult,
-  GateId,
-  ListId,
-  Project,
-  ProviderId,
-  Settings,
-  Task,
-} from './types';
+import type { GateEvalResult, ListId, Project, ProviderId, Settings, Task } from './types';
 
 export interface GlobalState {
   settings: Settings;
@@ -54,11 +45,10 @@ export interface Schema {
   SET_ACTIVE_LIST: { req: { providerId: ProviderId; listId: ListId }; res: null };
 
   // Gating. GATE_EVAL is what the site-wide content script polls to learn
-  // whether to show the block overlay.
+  // whether to show the block overlay. Gating config is mutated by writing
+  // Settings.gating directly (the options page) — the background's settings
+  // watcher then broadcasts GATE_CHANGED — so there's no GATE_SET_* message.
   GATE_EVAL: { req: Empty; res: GateEvalResult };
-  GATE_SET_ENABLED: { req: { enabled: boolean }; res: null };
-  GATE_SET_ACTIVE: { req: { gateId: GateId | null }; res: null };
-  GATE_SET_CONFIG: { req: { gateId: GateId; config: GateConfig }; res: null };
 
   // Content scripts report active YouTube watch time (the "spent" side of
   // budget gates). The background accrues it against the local-day total.

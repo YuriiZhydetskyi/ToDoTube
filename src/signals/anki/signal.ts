@@ -16,7 +16,9 @@ import { startOfLocalDayMs, sumReviewDurationMs } from './reviews';
 const CACHE_MS = 20_000;
 let cache: { value: SignalValue; at: number } | null = null;
 
-async function readStudyTodayMs(now: number): Promise<Result<number, string>> {
+// Exported (uncached) so tests can exercise the deck fan-out without the
+// module-level cache below.
+export async function readStudyTodayMs(now: number): Promise<Result<number, string>> {
   const startID = startOfLocalDayMs(now);
 
   const decks = await ankiInvoke<string[]>(ANKI_ACTIONS.deckNames);

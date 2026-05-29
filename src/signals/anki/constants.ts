@@ -18,10 +18,7 @@ export const ANKI_ACTIONS = {
 // `cardReviews` returns one array per review — a raw Anki `revlog` row
 // (9 columns):
 //   [id, cid, usn, ease, ivl, lastIvl, factor, time, type]
-// `id` (index 0) is the review timestamp in epoch ms; `time` (index 7) is
-// the review duration in ms.
-//
-// These indices are the only fragile part of the Anki integration; if a
-// live collection disagrees, fix them HERE and nowhere else.
-export const ANKI_REVIEW_ID_INDEX = 0;
+// `time` (index 7) is the review duration in ms — the only value we read.
+// This index is the one fragile part of the Anki integration; if a live
+// collection disagrees, fix it HERE and nowhere else.
 export const ANKI_REVIEW_TIME_INDEX = 7;

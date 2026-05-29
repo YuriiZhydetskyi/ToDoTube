@@ -80,6 +80,14 @@ what unlocks it"). The feature adds two new layers next to `providers/`:
 
 The background is the single source of truth for the decision. Content
 scripts only reflect it and re-lock themselves precisely at `allowedUntil`.
+Gating config is mutated by writing `Settings.gating` directly (the options
+page); the background's settings watcher then broadcasts `GATE_CHANGED`.
+
+> **This is friction, not a hard lock.** The overlay is ordinary DOM: a
+> determined user can remove it via DevTools, disable the extension, or
+> exploit the brief `document_start`→`GATE_EVAL` window before it mounts.
+> Gating is a self-discipline aid, not a security boundary — set
+> expectations accordingly.
 
 ### Files
 
@@ -87,7 +95,7 @@ scripts only reflect it and re-lock themselves precisely at `allowedUntil`.
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | `shared/types.ts`                                | DTOs: `SignalValue`, `GateDecision`, `RequirementView`, `GateEvalResult`, `GatingSettings` (+ `Settings.gating`) |
 | `shared/storage.ts`                              | per-gate state items + YouTube usage record                                                                      |
-| `shared/messaging.ts`                            | `GATE_EVAL`, `GATE_SET_*`, broadcast `GATE_CHANGED`                                                              |
+| `shared/messaging.ts`                            | `GATE_EVAL`, `YOUTUBE_TICK`, `ANKI_TEST`, broadcast `GATE_CHANGED`                                               |
 | `signals/types.ts`, `signals/registry.ts`        | `Signal` interface + external-sensor registry                                                                    |
 | `gates/types.ts`                                 | `Gate`, `GateContext`, `GateEvent`                                                                               |
 | `gates/task-complete/gate.ts`                    | the first gate (+ `gate.test.ts`)                                                                                |

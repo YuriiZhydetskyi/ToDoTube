@@ -40,7 +40,15 @@ async function buildContext(gateId: GateId, config: GateConfig, now: number): Pr
     youtubeUsageTodayMs: await getYoutubeUsageTodayMs(now),
     readSignal: async (id, signalConfig) => {
       const signal = getSignalOrNull(id);
-      return signal ? signal.read(signalConfig) : err(`Unknown signal: ${id}`);
+      if (!signal) return err(`Unknown signal: ${id}`);
+      try {
+        return await signal.read(signalConfig);
+      } catch (e) {
+        // Surface a throwing signal as an error so the gate applies its own
+        // fail-open / fail-closed policy, rather than letting it bubble to
+        // evaluateGate's catch (which always fails open).
+        return err(e instanceof Error ? e.message : String(e));
+      }
     },
     state: await getGateState(gateId),
     config,

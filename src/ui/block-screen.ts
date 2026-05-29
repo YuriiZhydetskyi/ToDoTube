@@ -64,7 +64,7 @@ function renderAction(action: NonNullable<RequirementView['action']>): HTMLEleme
     link.textContent = action.label;
     (link as HTMLAnchorElement).href = action.url;
     (link as HTMLAnchorElement).target = '_blank';
-    (link as HTMLAnchorElement).rel = 'noopener,noreferrer';
+    (link as HTMLAnchorElement).rel = 'noopener noreferrer';
     return link;
   }
   const button = el('button', 'tt-block__action');
