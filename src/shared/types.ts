@@ -95,6 +95,29 @@ export const ANKI_SETUP_URL = 'https://foosoft.net/projects/anki-connect/#config
 export type GateConfig = Record<string, unknown>;
 export type GateState = Record<string, unknown>;
 
+// A gate declares its user-configurable fields as a small schema so the
+// options page can render them generically (no per-gate special-casing).
+// `key` is the GateConfig property the field reads/writes.
+export type GateConfigField =
+  | {
+      kind: 'number';
+      key: string;
+      label: string;
+      help?: string;
+      default: number;
+      min?: number;
+      max?: number;
+      step?: number;
+    }
+  | {
+      kind: 'select';
+      key: string;
+      label: string;
+      help?: string;
+      default: string;
+      options: ReadonlyArray<readonly [value: string, label: string]>;
+    };
+
 // What to render on the block screen when access is denied.
 export interface RequirementView {
   title: string;

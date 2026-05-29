@@ -10,7 +10,14 @@
 // behavioral interfaces only.
 
 import type { Result } from '@/shared/result';
-import type { GateConfig, GateDecision, GateState, ProviderId, SignalValue } from '@/shared/types';
+import type {
+  GateConfig,
+  GateConfigField,
+  GateDecision,
+  GateState,
+  ProviderId,
+  SignalValue,
+} from '@/shared/types';
 
 // Everything a gate needs to make a decision, injected by the core so the
 // gate stays decoupled from storage and from the signals registry.
@@ -33,6 +40,10 @@ export type GateEvent = { type: 'task-completed'; providerId: ProviderId; taskId
 export interface Gate {
   readonly id: string;
   readonly displayName: string;
+
+  /** User-configurable fields, rendered generically by the options page.
+   * Omit for gates with no settings. */
+  readonly configSchema?: readonly GateConfigField[];
 
   /** Compute the current decision. Must be side-effect free besides
    * returning `nextState` for the core to persist. */

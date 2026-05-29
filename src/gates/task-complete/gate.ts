@@ -67,6 +67,30 @@ export const taskCompleteGate: Gate = {
   id: TASK_COMPLETE_GATE_ID,
   displayName: 'Complete a task',
 
+  // Defaults here mirror DEFAULT_* above so the UI and runtime agree.
+  configSchema: [
+    {
+      kind: 'number',
+      key: 'tasksRequired',
+      label: 'Tasks to complete',
+      help: 'How many tasks you must finish to unlock a viewing session.',
+      default: DEFAULT_TASKS_REQUIRED,
+      min: 1,
+      max: 50,
+      step: 1,
+    },
+    {
+      kind: 'number',
+      key: 'grantMinutes',
+      label: 'Minutes unlocked',
+      help: 'How long YouTube stays open once the condition is met.',
+      default: DEFAULT_GRANT_MINUTES,
+      min: 1,
+      max: 600,
+      step: 1,
+    },
+  ],
+
   async evaluate(ctx: GateContext): Promise<GateDecision> {
     const cfg = readConfig(ctx.config);
     const unlockedUntil = numberOr(ctx.state.unlockedUntil, 0);

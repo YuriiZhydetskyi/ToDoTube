@@ -50,6 +50,30 @@ export const ankiBudgetGate: Gate = {
   id: ANKI_BUDGET_GATE_ID,
   displayName: 'Earn time with Anki',
 
+  configSchema: [
+    {
+      kind: 'number',
+      key: 'ratio',
+      label: 'YouTube minutes per Anki minute',
+      help: 'Earned viewing time per minute studied. 1 = parity; 0.5 = study twice as long as you watch.',
+      default: DEFAULT_RATIO,
+      min: 0.25,
+      max: 10,
+      step: 0.25,
+    },
+    {
+      kind: 'select',
+      key: 'failMode',
+      label: 'When Anki is closed',
+      help: 'Anki must be running for its study time to count.',
+      default: 'closed',
+      options: [
+        ['closed', 'Block YouTube'],
+        ['open', 'Allow YouTube'],
+      ],
+    },
+  ],
+
   async evaluate(ctx: GateContext): Promise<GateDecision> {
     const cfg = readConfig(ctx.config);
 

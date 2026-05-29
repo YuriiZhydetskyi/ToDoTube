@@ -13,8 +13,8 @@ import { getProviderState, setProviderState, setSettings } from '@/shared/storag
 import {
   ANKI_BUDGET_GATE_ID,
   DEFAULT_GATING,
-  TASK_COMPLETE_GATE_ID,
   type GateConfig,
+  type GateConfigField,
   type GatingSettings,
   type ProviderId,
   type Settings,
@@ -188,7 +188,11 @@ export function renderBehaviorSection(container: HTMLElement, settings: Settings
 export function renderFocusSection(
   container: HTMLElement,
   settings: Settings,
-  gates: ReadonlyArray<{ id: string; displayName: string }>,
+  gates: ReadonlyArray<{
+    id: string;
+    displayName: string;
+    configSchema?: readonly GateConfigField[];
+  }>,
   deps?: FocusSectionDeps,
 ): void {
   container.replaceChildren();
@@ -235,55 +239,51 @@ export function renderFocusSection(
     );
   }
 
-  if (gating.activeGateId === TASK_COMPLETE_GATE_ID) {
-    const cfg = gating.gateConfigs[TASK_COMPLETE_GATE_ID] ?? {};
+  const activeGate = gates.find((g) => g.id === gating.activeGateId);
+
+  // Render the active gate's configurable fields generically from its schema.
+  if (activeGate?.configSchema?.length) {
+    const cfg = gating.gateConfigs[activeGate.id] ?? {};
     const setCfg = (patch: GateConfig): void => {
-      persist({
-        gateConfigs: { ...gating.gateConfigs, [TASK_COMPLETE_GATE_ID]: { ...cfg, ...patch } },
-      });
+      persist({ gateConfigs: { ...gating.gateConfigs, [activeGate.id]: { ...cfg, ...patch } } });
     };
-    container.append(
-      row(
-        'Tasks to complete',
-        numberInput(cfgNumber(cfg.tasksRequired, 1), 1, 50, (v) => setCfg({ tasksRequired: v })),
-        'How many tasks you must finish to unlock a viewing session.',
-      ),
-      row(
-        'Minutes unlocked',
-        numberInput(cfgNumber(cfg.grantMinutes, 30), 1, 600, (v) => setCfg({ grantMinutes: v })),
-        'How long YouTube stays open once the condition is met.',
-      ),
-    );
+    for (const field of activeGate.configSchema) {
+      container.append(renderConfigField(field, cfg, setCfg));
+    }
   }
 
-  if (gating.activeGateId === ANKI_BUDGET_GATE_ID) {
-    const cfg = gating.gateConfigs[ANKI_BUDGET_GATE_ID] ?? {};
-    const setCfg = (patch: GateConfig): void => {
-      persist({
-        gateConfigs: { ...gating.gateConfigs, [ANKI_BUDGET_GATE_ID]: { ...cfg, ...patch } },
-      });
-    };
-    container.append(
-      row(
-        'YouTube minutes per Anki minute',
-        numberInput(cfgNumber(cfg.ratio, 1), 0.25, 10, (v) => setCfg({ ratio: v }), 0.25),
-        'Earned viewing time per minute studied. 1 = parity; 0.5 = study twice as long as you watch.',
-      ),
-      row(
-        'When Anki is closed',
-        enumSelect(
-          cfg.failMode === 'open' ? 'open' : 'closed',
-          [
-            ['closed', 'Block YouTube'],
-            ['open', 'Allow YouTube'],
-          ],
-          (v) => setCfg({ failMode: v }),
-        ),
-        'Anki must be running for its study time to count.',
-      ),
-    );
-    if (deps) container.append(renderAnkiSetup(deps));
+  // The Anki gate has gate-specific setup (localhost permission + connection
+  // test + CORS guide) beyond its plain config fields.
+  if (activeGate?.id === ANKI_BUDGET_GATE_ID && deps) {
+    container.append(renderAnkiSetup(deps));
   }
+}
+
+// Render one config field from a gate's schema.
+function renderConfigField(
+  field: GateConfigField,
+  cfg: GateConfig,
+  setCfg: (patch: GateConfig) => void,
+): HTMLElement {
+  if (field.kind === 'number') {
+    return row(
+      field.label,
+      numberInput(
+        cfgNumber(cfg[field.key], field.default),
+        field.min ?? 0,
+        field.max ?? Number.MAX_SAFE_INTEGER,
+        (v) => setCfg({ [field.key]: v }),
+        field.step ?? 1,
+      ),
+      field.help,
+    );
+  }
+  const current = typeof cfg[field.key] === 'string' ? (cfg[field.key] as string) : field.default;
+  return row(
+    field.label,
+    enumSelect(current, field.options, (v) => setCfg({ [field.key]: v })),
+    field.help,
+  );
 }
 
 // Anki connection helper block: request the localhost permission, test the
