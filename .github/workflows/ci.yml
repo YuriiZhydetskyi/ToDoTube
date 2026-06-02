@@ -88,6 +88,25 @@ jobs:
           fi
           echo "Activity bridge constant guard passed."
 
+      # Blocked-site domain guard — the social-site domains must live ONLY in
+      # src/shared/blocklist.ts (the "no magic constants" rule). youtube.com is
+      # intentionally NOT guarded: it predates this and is also used by the
+      # recommendation surface (youtube-watch.content.ts), which is a separate
+      # feature from gating.
+      - name: Blocked-site domain guard
+        run: |
+          set -e
+          leaked=$(grep -RIn --include='*.ts' \
+                     -E '\b(tiktok|facebook|instagram)\.com\b|\bthreads\.(net|com)\b|\bx\.com\b' src/ \
+                   | grep -vE 'src/shared/blocklist(\.test)?\.ts' \
+                   || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::Blocked-site domains leaked outside shared/blocklist.ts:"
+            echo "$leaked"
+            exit 1
+          fi
+          echo "Blocked-site domain guard passed."
+
       - name: Build (Chrome)
         run: pnpm build
 

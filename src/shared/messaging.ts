@@ -18,6 +18,10 @@ export interface GlobalState {
   // provider state, not settings, so we surface it here too — the
   // lifecycle needs both pieces to decide what to fetch.
   activeListId: ListId | null;
+  // Screen-time budget left today (earned − spent) per the active budget
+  // gate, in ms. null when gating is off or the active gate isn't
+  // budget-style. The popup renders it as the universal countdown.
+  budgetMsLeft: number | null;
 }
 
 // Used in Schema entries that have no payload beyond the `type` tag.
@@ -52,12 +56,13 @@ export interface Schema {
 
   // Completes a task via the active provider without the content script
   // needing to know which provider is active. Used by the block screen's
-  // task list so the user can earn YouTube access without leaving the page.
+  // task list so the user can earn access without leaving the page.
   COMPLETE_GATE_TASK: { req: { projectId: string; taskId: string }; res: null };
 
-  // Content scripts report active YouTube watch time (the "spent" side of
-  // budget gates). The background accrues it against the local-day total.
-  YOUTUBE_TICK: { req: { deltaMs: number }; res: null };
+  // Content scripts on blocked sites report active screen time (the "spent"
+  // side of budget gates) — all enabled sites share the one daily tally. The
+  // background accrues it against the local-day total.
+  USAGE_TICK: { req: { deltaMs: number }; res: null };
   // Options page "Test Anki connection" — reads the Anki study signal once.
   ANKI_TEST: { req: Empty; res: { studyMinutesToday: number } };
   // Options page "Test bridge connection" — reads the activity bridge once

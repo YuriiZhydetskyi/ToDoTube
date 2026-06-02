@@ -1,4 +1,7 @@
-// Cross-layer types. May not import from any other layer (shared is a leaf).
+// Cross-layer types. May not import from any other layer (shared is a leaf;
+// blocklist.ts is also in shared, so importing it stays intra-layer).
+
+import { BLOCKED_SITE_IDS } from './blocklist';
 
 export type ProviderId = 'ticktick';
 
@@ -186,6 +189,11 @@ export interface GatingSettings {
   scope: GatingScope;
   activeGateId: GateId | null;
   gateConfigs: Record<GateId, GateConfig>;
+  // Which sites (by BLOCKED_SITES id) the budget actually blocks. All known
+  // sites share the one daily budget; this just picks which ones participate.
+  // A stored config missing this field is normalised to "all sites" by
+  // `normalizeBlockedSiteIds` (older installs predate the multi-site list).
+  blockedSiteIds: string[];
 }
 
 export const DEFAULT_GATING: GatingSettings = {
@@ -193,7 +201,14 @@ export const DEFAULT_GATING: GatingSettings = {
   scope: 'site',
   activeGateId: null,
   gateConfigs: {},
+  blockedSiteIds: BLOCKED_SITE_IDS,
 };
+
+// Read `blockedSiteIds` defensively: installs that stored `gating` before the
+// multi-site list existed have no field, which we treat as "all sites".
+export function normalizeBlockedSiteIds(gating: GatingSettings | undefined): string[] {
+  return gating?.blockedSiteIds ?? BLOCKED_SITE_IDS;
+}
 
 export interface Settings {
   // Master on/off (popup toggle). When false, content scripts no-op.

@@ -68,11 +68,24 @@ Every manifest permission has exactly one runtime call site:
 
 Host permissions:
 
-| Host                         | Used by                                                                       | Purpose                                                                                      |
-| ---------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `*://*.youtube.com/*`        | `src/surfaces/desktop-watch/` content scripts (see `entrypoints/content.ts`)  | Inject the task panel onto YouTube watch pages by reading the DOM. No YouTube API is called. |
-| `https://api.ticktick.com/*` | `src/providers/ticktick/api.ts:83` — single `fetch` against `API_BASE + path` | Read tasks and mark them complete via TickTick's Open API.                                   |
-| `https://ticktick.com/*`     | `src/providers/ticktick/oauth.ts:191` — single `fetch` against `TOKEN_URL`    | OAuth token exchange and refresh.                                                            |
+The blockable-site hosts are single-sourced in `src/shared/blocklist.ts`
+(the build reads them into both the content-script `matches` and these
+`host_permissions`). They are used **only** to inject a full-page block
+overlay (DOM manipulation) when the user has enabled blocking for that site
+in Focus mode — **no site API is called and nothing is read off the page**.
+The gating content script (`entrypoints/blocked-sites.content.ts`) does not
+`fetch` anything (see the network audit below).
+
+| Host                                         | Used by                                                                               | Purpose                                                                                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `*://*.youtube.com/*`                        | `src/surfaces/desktop-watch/` (panel) + `entrypoints/blocked-sites.content.ts` (gate) | Inject the task panel onto YouTube watch pages, and the block overlay when YouTube is gated. No YouTube API is called. `music.youtube.com` is excluded from gating. |
+| `*://*.tiktok.com/*`                         | `entrypoints/blocked-sites.content.ts` (gate)                                         | Inject the block overlay when TikTok is gated. No API call, no page reads.                                                                                          |
+| `*://*.facebook.com/*`                       | `entrypoints/blocked-sites.content.ts` (gate)                                         | Inject the block overlay when Facebook is gated. No API call, no page reads.                                                                                        |
+| `*://*.threads.net/*`, `*://*.threads.com/*` | `entrypoints/blocked-sites.content.ts` (gate)                                         | Inject the block overlay when Threads is gated. No API call, no page reads.                                                                                         |
+| `*://*.x.com/*`                              | `entrypoints/blocked-sites.content.ts` (gate)                                         | Inject the block overlay when X is gated. No API call, no page reads.                                                                                               |
+| `*://*.instagram.com/*`                      | `entrypoints/blocked-sites.content.ts` (gate)                                         | Inject the block overlay when Instagram is gated. No API call, no page reads.                                                                                       |
+| `https://api.ticktick.com/*`                 | `src/providers/ticktick/api.ts:83` — single `fetch` against `API_BASE + path`         | Read tasks and mark them complete via TickTick's Open API.                                                                                                          |
+| `https://ticktick.com/*`                     | `src/providers/ticktick/oauth.ts:191` — single `fetch` against `TOKEN_URL`            | OAuth token exchange and refresh.                                                                                                                                   |
 
 ## Network audit
 

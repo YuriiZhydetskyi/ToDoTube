@@ -21,7 +21,7 @@ function ctx(opts: {
 }): GateContext {
   return {
     now: NOW,
-    youtubeUsageTodayMs: opts.spentMs ?? 0,
+    spentTodayMs: opts.spentMs ?? 0,
     readSignal: async () => err('no signals in this test'),
     readCompletedTasksToday: async () =>
       opts.completedErr ? err(opts.completedErr) : ok(opts.completed ?? []),

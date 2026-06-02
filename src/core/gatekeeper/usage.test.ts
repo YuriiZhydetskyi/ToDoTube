@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 
-import { addYoutubeUsageMs, getYoutubeUsageTodayMs, localDayKey } from './usage';
+import { addSpentMs, getSpentTodayMs, localDayKey } from './usage';
 
 const MORNING = new Date(2026, 4, 29, 8, 0, 0).getTime();
 const EVENING = new Date(2026, 4, 29, 22, 0, 0).getTime();
@@ -22,23 +22,23 @@ describe('localDayKey', () => {
   });
 });
 
-describe('youtube usage accrual', () => {
+describe('screen-time accrual', () => {
   it('accumulates within a day', async () => {
-    await addYoutubeUsageMs(MORNING, 5_000);
-    await addYoutubeUsageMs(EVENING, 7_000);
-    expect(await getYoutubeUsageTodayMs(EVENING)).toBe(12_000);
+    await addSpentMs(MORNING, 5_000);
+    await addSpentMs(EVENING, 7_000);
+    expect(await getSpentTodayMs(EVENING)).toBe(12_000);
   });
 
   it('resets when the day changes', async () => {
-    await addYoutubeUsageMs(EVENING, 9_000);
-    expect(await getYoutubeUsageTodayMs(NEXT_DAY)).toBe(0);
-    await addYoutubeUsageMs(NEXT_DAY, 1_000);
-    expect(await getYoutubeUsageTodayMs(NEXT_DAY)).toBe(1_000);
+    await addSpentMs(EVENING, 9_000);
+    expect(await getSpentTodayMs(NEXT_DAY)).toBe(0);
+    await addSpentMs(NEXT_DAY, 1_000);
+    expect(await getSpentTodayMs(NEXT_DAY)).toBe(1_000);
   });
 
   it('ignores non-positive deltas', async () => {
-    await addYoutubeUsageMs(MORNING, 0);
-    await addYoutubeUsageMs(MORNING, -500);
-    expect(await getYoutubeUsageTodayMs(MORNING)).toBe(0);
+    await addSpentMs(MORNING, 0);
+    await addSpentMs(MORNING, -500);
+    expect(await getSpentTodayMs(MORNING)).toBe(0);
   });
 });

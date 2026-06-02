@@ -25,7 +25,7 @@ import {
 
 import { cachedRead } from '@/core/background/task-cache';
 
-import { getYoutubeUsageTodayMs, localDayKey } from './usage';
+import { getSpentTodayMs, localDayKey } from './usage';
 
 // Completed-tasks reads are cached this long to stay well under TickTick's
 // 100-req/min limit; completing a task invalidates the cache for immediacy.
@@ -44,7 +44,7 @@ async function loadActive(): Promise<{ gateId: GateId; config: GateConfig } | nu
 async function buildContext(gateId: GateId, config: GateConfig, now: number): Promise<GateContext> {
   return {
     now,
-    youtubeUsageTodayMs: await getYoutubeUsageTodayMs(now),
+    spentTodayMs: await getSpentTodayMs(now),
     readSignal: async (id, signalConfig) => {
       const signal = getSignalOrNull(id);
       if (!signal) return err(`Unknown signal: ${id}`);
@@ -65,7 +65,7 @@ async function buildContext(gateId: GateId, config: GateConfig, now: number): Pr
 
 // Bridge the active provider's "completed today" query into the gate
 // context. Lazy (a thunk) so only gates that need it pay the network cost.
-// "Today" uses the same local-day boundary as the YouTube-usage tracker.
+// "Today" uses the same local-day boundary as the screen-time tracker.
 async function readCompletedTasksToday(now: number): Promise<Result<Task[], string>> {
   const settings = await getSettings();
   if (!settings.activeProviderId) return err('No active provider');

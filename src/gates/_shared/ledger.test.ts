@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ledgerDecision } from './ledger';
 
 const MIN = 60_000;
-const copy = { blockedTitle: 'Move to unlock YouTube', blockedDetail: 'Do ~5 more reps.' };
+const copy = { blockedTitle: 'Move to unlock access', blockedDetail: 'Do ~5 more reps.' };
 
 describe('ledgerDecision', () => {
   it('allows while earned exceeds spent, surfacing the budget', () => {

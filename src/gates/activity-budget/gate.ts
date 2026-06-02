@@ -1,4 +1,4 @@
-// Activity budget gate — earn YouTube time with physical activity.
+// Activity budget gate — earn screen time with physical activity.
 //
 // The continuous-credit ledger (the same model as the Anki gate), but the
 // "earned" side comes from a fitness signal read over HTTP from a local
@@ -7,7 +7,7 @@
 // amount + a reward:
 //
 //   earned = (todayValue / effort) × reward
-//   spent  = (YouTube minutes watched today)
+//   spent  = (screen-time minutes used today)
 //   allowed while earned − spent > 0.
 //
 // `todayValue` arrives via ctx.readSignal in the metric's CANONICAL unit (ms
@@ -95,7 +95,7 @@ export const activityBudgetGate: Gate = {
       kind: 'number',
       key: 'rewardMinutes',
       label: 'Minutes earned per reward',
-      help: 'YouTube minutes unlocked for each "effort required" you complete.',
+      help: 'Viewing minutes unlocked for each "effort required" you complete.',
       default: DEFAULT_REWARD_MIN,
       min: 1,
       max: 600,
@@ -116,8 +116,8 @@ export const activityBudgetGate: Gate = {
       help: 'The bridge must be running for your activity to count.',
       default: 'closed',
       options: [
-        ['closed', 'Block YouTube'],
-        ['open', 'Allow YouTube'],
+        ['closed', 'Block the sites'],
+        ['open', 'Allow the sites'],
       ],
     },
   ],
@@ -135,12 +135,12 @@ export const activityBudgetGate: Gate = {
 
     if (!signal.ok) {
       if (cfg.failMode === 'open') {
-        return { allowed: true, requirement: { title: 'YouTube unlocked' } };
+        return { allowed: true, requirement: { title: 'Access unlocked' } };
       }
       return {
         allowed: false,
         requirement: {
-          title: 'Start the activity bridge to unlock YouTube',
+          title: 'Start the activity bridge to unlock access',
           detail: `Couldn't reach the bridge (${signal.error}). Start your fitness bridge and confirm its URL in settings.`,
           action: bridgeSetupAction,
         },
@@ -153,11 +153,11 @@ export const activityBudgetGate: Gate = {
     const canonicalEffort =
       metric.kind === 'durationMs' ? cfg.effortAmount * MINUTE_MS : cfg.effortAmount;
     const earnedMs = (signal.value.value / canonicalEffort) * cfg.rewardMinutes * MINUTE_MS;
-    const spentMs = ctx.youtubeUsageTodayMs;
+    const spentMs = ctx.spentTodayMs;
 
     return ledgerDecision(earnedMs, spentMs, {
-      blockedTitle: 'Move to unlock YouTube',
-      blockedDetail: `Earned ${toMin(earnedMs)} min · watched ${toMin(spentMs)} min today. ${remainingHint(cfg, metric, earnedMs, spentMs)}`,
+      blockedTitle: 'Move to unlock access',
+      blockedDetail: `Earned ${toMin(earnedMs)} min · used ${toMin(spentMs)} min today. ${remainingHint(cfg, metric, earnedMs, spentMs)}`,
       action: bridgeSetupAction,
     });
   },

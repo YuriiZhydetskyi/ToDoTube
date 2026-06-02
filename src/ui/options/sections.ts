@@ -7,9 +7,10 @@
 // blow away focus and cursor state on text inputs. Inputs are
 // uncontrolled and write back to storage on `change`.
 
+import { BLOCKED_SITES } from '@/shared/blocklist';
 import { sendToBackground } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
-import { getProviderState, setProviderState, setSettings } from '@/shared/storage';
+import { getProviderState, getSettings, setProviderState, setSettings } from '@/shared/storage';
 import {
   ACTIVITY_BUDGET_GATE_ID,
   ANKI_BUDGET_GATE_ID,
@@ -17,6 +18,7 @@ import {
   type GateConfig,
   type GateConfigField,
   type GatingSettings,
+  normalizeBlockedSiteIds,
   type ProviderId,
   type Settings,
 } from '@/shared/types';
@@ -186,6 +188,51 @@ export function renderBehaviorSection(container: HTMLElement, settings: Settings
   );
 }
 
+// "Blocked sites" — which sites the shared daily budget applies to. The
+// checkboxes write into gating.blockedSiteIds; every enabled site draws from
+// one budget (see core/gatekeeper), so time on any of them counts against the
+// same daily allowance. Custom user-added domains are a planned follow-up
+// (docs/CUSTOM-SITES.md). The site list itself is single-sourced in
+// shared/blocklist — this just renders a toggle per entry.
+export function renderBlockingSection(container: HTMLElement, settings: Settings): void {
+  container.replaceChildren();
+  container.append(el('h2', { class: 'tt-card__title', text: 'Blocked sites' }));
+
+  const gating = settings.gating ?? DEFAULT_GATING;
+  const enabledIds = new Set(normalizeBlockedSiteIds(gating));
+
+  container.append(
+    el('p', {
+      class: 'tt-card__lede',
+      text: 'Pick the sites this blocks. They share one daily allowance — time spent on any of them counts against the same limit.',
+    }),
+  );
+
+  for (const site of BLOCKED_SITES) {
+    container.append(
+      row(
+        site.label,
+        // Read fresh settings on each toggle so rapid clicks across rows can't
+        // clobber one another from a stale snapshot. Re-derive the id list in
+        // the blocklist's canonical order for a stable stored value.
+        checkbox(enabledIds.has(site.id), (checked) => {
+          void (async () => {
+            const current = await getSettings();
+            const cur = current.gating ?? DEFAULT_GATING;
+            const ids = new Set(normalizeBlockedSiteIds(cur));
+            if (checked) ids.add(site.id);
+            else ids.delete(site.id);
+            const ordered = BLOCKED_SITES.map((s) => s.id).filter((id) => ids.has(id));
+            await setSettings({ gating: { ...cur, blockedSiteIds: ordered } });
+          })();
+        }),
+      ),
+    );
+  }
+
+  container.append(el('p', { class: 'tt-row__help', text: 'Custom sites — coming soon.' }));
+}
+
 // Gating ("Focus mode"). Gate-agnostic UI: the available gates are passed
 // in by the orchestrator (core/options.ts) so this ui-layer file never
 // imports the gates/ layer. Per-gate config fields are still special-cased
@@ -219,14 +266,14 @@ export function renderFocusSection(
 
   container.append(
     row(
-      'Block YouTube until a condition is met',
+      'Block the selected sites until a condition is met',
       checkbox(gating.enabled, (v) => {
         // Enabling with no gate chosen yet defaults to the first available.
         const activeGateId =
           v && !gating.activeGateId ? (gates[0]?.id ?? null) : gating.activeGateId;
         reRender(persist({ enabled: v, activeGateId }));
       }),
-      'When on, all of YouTube is blocked until you satisfy the chosen condition.',
+      'When on, the sites you checked above are blocked until you satisfy the chosen condition.',
     ),
   );
 

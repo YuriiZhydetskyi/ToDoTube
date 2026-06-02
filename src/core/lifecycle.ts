@@ -13,6 +13,7 @@
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
 import { isActiveTab } from '@/shared/active-tab';
+import { formatBudgetClock, remainingBudgetMs } from '@/shared/budget';
 import { log, setVerbose } from '@/shared/logger';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
@@ -31,13 +32,7 @@ import {
   type MountHandle,
 } from '@/surfaces/desktop-watch/adapter';
 import { onEndscreenReady, type EndscreenTrigger } from '@/surfaces/desktop-watch/triggers';
-import {
-  formatBudgetClock,
-  panelCss,
-  renderPanel,
-  type PanelHeader,
-  type PanelState,
-} from '@/ui/panel';
+import { panelCss, renderPanel, type PanelHeader, type PanelState } from '@/ui/panel';
 
 const WATCH_PATH = '/watch';
 const REMOUNT_RETRY_INTERVAL_MS = 250;
@@ -203,15 +198,6 @@ function applyGate(state: State, result: GateEvalResult): void {
   if (next === state.budgetMsLeft) return;
   state.budgetMsLeft = next;
   setUi(state, state.ui);
-}
-
-// Milliseconds earned-but-unspent today, or null when there's no budget to
-// show (gating off, or a gate whose decision carries no earned/spent figures).
-function remainingBudgetMs(result: GateEvalResult): number | null {
-  if (!result.gating) return null;
-  const { earnedMs, spentMs } = result.decision;
-  if (earnedMs === undefined || spentMs === undefined) return null;
-  return Math.max(0, earnedMs - spentMs);
 }
 
 // Per-second countdown. Gated on the same `isActiveTab()` condition as the

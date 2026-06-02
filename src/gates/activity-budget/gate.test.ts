@@ -19,7 +19,7 @@ function ctx(opts: {
 }): GateContext {
   return {
     now: 1_700_000_000_000,
-    youtubeUsageTodayMs: opts.spentMs ?? 0,
+    spentTodayMs: opts.spentMs ?? 0,
     readSignal: async (id, config) => {
       expect(id).toBe(HTTP_SIGNAL_ID);
       if (opts.error) return err(opts.error);

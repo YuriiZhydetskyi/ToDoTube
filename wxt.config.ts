@@ -1,6 +1,10 @@
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
 
+// Single-sourced from the gating blocklist so the manifest host permissions
+// and the content-script `matches` can never drift (see src/shared/blocklist).
+import { BLOCKED_SITE_MATCHES } from './src/shared/blocklist';
+
 // See https://wxt.dev/api/config.html
 //
 // Layout note: with `srcDir: 'src'`, WXT looks for entrypoints in
@@ -19,8 +23,10 @@ export default defineConfig({
     name: 'ToDoTube',
     description: 'Replace YouTube recommendations with your to-do list.',
     permissions: ['storage', 'identity', 'alarms'],
+    // Blockable sites (YouTube, TikTok, Facebook, Threads, X, Instagram) come
+    // from the single-sourced blocklist; TickTick's API hosts are appended.
     host_permissions: [
-      '*://*.youtube.com/*',
+      ...BLOCKED_SITE_MATCHES,
       'https://api.ticktick.com/*',
       'https://ticktick.com/*',
     ],

@@ -1,8 +1,8 @@
 // Task-budget gate — the discrete-task case of the ledger model.
 //
-// earned = Σ over tasks completed TODAY of their YouTube minutes:
+// earned = Σ over tasks completed TODAY of their screen-time minutes:
 //          a "(+N min y)" annotation in the title, else the per-task default
-// spent  = YouTube minutes watched today (ctx.youtubeUsageTodayMs)
+// spent  = screen-time minutes used today (ctx.spentTodayMs)
 // allowed while earned − spent > 0
 //
 // Unlike Anki/Garmin (which read a sensor via ctx.readSignal), this gate's
@@ -49,7 +49,7 @@ export const taskCompleteGate: Gate = {
     {
       kind: 'number',
       key: 'minutesPerTask',
-      label: 'YouTube minutes per task',
+      label: 'Minutes earned per task',
       help: 'Each task you finish today earns this much viewing time. Override per task by adding "(+N min y)" to its title.',
       default: DEFAULT_MINUTES_PER_TASK,
       min: 1,
@@ -63,8 +63,8 @@ export const taskCompleteGate: Gate = {
       help: 'Applied if your task provider is disconnected or unreachable.',
       default: 'closed',
       options: [
-        ['closed', 'Block YouTube'],
-        ['open', 'Allow YouTube'],
+        ['closed', 'Block the sites'],
+        ['open', 'Allow the sites'],
       ],
     },
   ],
@@ -75,12 +75,12 @@ export const taskCompleteGate: Gate = {
     const completed = await ctx.readCompletedTasksToday();
     if (!completed.ok) {
       if (cfg.failMode === 'open') {
-        return { allowed: true, requirement: { title: 'YouTube unlocked' } };
+        return { allowed: true, requirement: { title: 'Access unlocked' } };
       }
       return {
         allowed: false,
         requirement: {
-          title: 'Connect your tasks to unlock YouTube',
+          title: 'Connect your tasks to unlock access',
           detail: `Couldn't reach your task list (${completed.error}).`,
         },
       };
@@ -91,15 +91,15 @@ export const taskCompleteGate: Gate = {
       return sum + (minutes ?? cfg.minutesPerTask);
     }, 0);
     const earnedMs = earnedMin * MINUTE_MS;
-    const spentMs = ctx.youtubeUsageTodayMs;
+    const spentMs = ctx.spentTodayMs;
     const taskWord = completed.value.length === 1 ? 'task' : 'tasks';
 
     return ledgerDecision(earnedMs, spentMs, {
-      blockedTitle: 'Complete a task to unlock YouTube',
+      blockedTitle: 'Complete a task to unlock access',
       blockedDetail:
         `${completed.value.length} ${taskWord} done today = ${earnedMin} min earned · ` +
-        `watched ${toMin(spentMs)} min. Finish another task (${cfg.minutesPerTask} min each, ` +
-        `or "+N min y" in the title) to keep watching.`,
+        `used ${toMin(spentMs)} min. Finish another task (${cfg.minutesPerTask} min each, ` +
+        `or "+N min y" in the title) to keep browsing.`,
     });
   },
 };

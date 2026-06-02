@@ -1,5 +1,5 @@
-// A Gate is an access policy: it decides whether YouTube may be used right
-// now and, if not, what the user must do to unlock it. Gates are the
+// A Gate is an access policy: it decides whether the blocked sites may be
+// used right now and, if not, what the user must do to unlock them. Gates are the
 // second pluggable axis of ToDoTube (the first is providers). A gate is
 // pure policy — it reads signals + its own config/state and returns a
 // decision; it never touches the DOM and never persists anything itself
@@ -23,8 +23,9 @@ import type {
 // gate stays decoupled from storage, the signals registry, and providers.
 export interface GateContext {
   now: number;
-  // The debit side of ledger-style gates: time spent on YouTube today.
-  youtubeUsageTodayMs: number;
+  // The debit side of ledger-style gates: time spent today across all enabled
+  // blocked sites (they share one budget).
+  spentTodayMs: number;
   // Pull an external sensor by id (the core bridges to the signals
   // registry). Returns err for unknown/unreachable signals.
   readSignal: (id: string, config?: unknown) => Promise<Result<SignalValue, string>>;

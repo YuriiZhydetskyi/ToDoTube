@@ -14,6 +14,7 @@ import '@/ui/styles/popup.css';
 
 import { browser } from 'wxt/browser';
 
+import { formatBudgetClock } from '@/shared/budget';
 import { sendToBackground } from '@/shared/messaging';
 import { getProviderDescriptor } from '@/shared/providers';
 import { getProviderState, getSettings } from '@/shared/storage';
@@ -58,6 +59,19 @@ export async function startPopup(root: HTMLElement): Promise<void> {
   const statusSecondary = el('div', { class: 'tt-popup__status-secondary' });
   const statusBlock = el('div', { class: 'tt-popup__status' }, statusPrimary, statusSecondary);
 
+  // Budget: "screen time left today" per the active budget gate — the
+  // universal countdown for sites without an in-page timer of their own.
+  // Static while the popup is open: opening the popup blurs the page, so
+  // accrual pauses and the figure stays accurate without ticking.
+  const budgetValue = el('strong', { class: 'tt-popup__budget-value' });
+  const budgetBlock = el(
+    'div',
+    { class: 'tt-popup__budget' },
+    budgetValue,
+    el('span', { class: 'tt-popup__budget-label', text: 'screen time left today' }),
+  );
+  budgetBlock.hidden = true;
+
   const settingsBtn = el('button', {
     class: 'tt-popup__btn',
     text: 'Open settings',
@@ -67,7 +81,7 @@ export async function startPopup(root: HTMLElement): Promise<void> {
     window.close();
   });
 
-  wrap.append(title, toggleRow, statusBlock, settingsBtn);
+  wrap.append(title, toggleRow, budgetBlock, statusBlock, settingsBtn);
   root.append(wrap);
 
   async function refresh(): Promise<void> {
@@ -77,8 +91,12 @@ export async function startPopup(root: HTMLElement): Promise<void> {
       statusSecondary.textContent = r.error;
       return;
     }
-    const { settings, authenticated } = r.value;
+    const { settings, authenticated, budgetMsLeft } = r.value;
     toggle.checked = settings.enabled;
+    // Budget is independent of the provider connection (e.g. the Anki/activity
+    // gates need no provider), so render it before the not-connected return.
+    budgetBlock.hidden = budgetMsLeft == null;
+    if (budgetMsLeft != null) budgetValue.textContent = formatBudgetClock(budgetMsLeft);
     if (!settings.activeProviderId || !authenticated) {
       statusPrimary.textContent = 'Not connected';
       statusSecondary.textContent = 'Open settings to connect.';

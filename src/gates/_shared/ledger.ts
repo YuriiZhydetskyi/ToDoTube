@@ -1,5 +1,5 @@
-// The continuous-credit ledger shared by budget-style gates: YouTube is
-// allowed while time EARNED (from some activity) exceeds time SPENT watching
+// The continuous-credit ledger shared by budget-style gates: the blocked
+// sites are allowed while time EARNED (from some activity) exceeds time SPENT
 // today. Both Anki minutes and Garmin activity reduce to this same decision,
 // so the math + block-screen shape lives here once. Each gate computes its
 // own `earnedMs` (the interesting, gate-specific part) and supplies its own
@@ -17,7 +17,7 @@ export interface LedgerCopy {
   blockedDetail: string;
   // Optional call-to-action on the block screen (e.g. a setup link).
   action?: RequirementView['action'];
-  // Defaults to "YouTube unlocked" — the overlay doesn't render it.
+  // Defaults to "Access unlocked" — the overlay doesn't render it.
   allowedTitle?: string;
 }
 
@@ -30,7 +30,7 @@ export function ledgerDecision(earnedMs: number, spentMs: number, copy: LedgerCo
       allowed: true,
       earnedMs,
       spentMs,
-      requirement: { title: copy.allowedTitle ?? 'YouTube unlocked' },
+      requirement: { title: copy.allowedTitle ?? 'Access unlocked' },
     };
   }
   return {

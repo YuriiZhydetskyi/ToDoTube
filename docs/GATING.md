@@ -1,14 +1,19 @@
-# Gating — "Focus mode" (block YouTube until a condition is met)
+# Gating — "Focus mode" (block time-sink sites until a condition is met)
 
-> Status: **task-complete and Anki gates shipped** (incl. YouTube usage
-> accrual); the generic HTTP gate is still on the roadmap. See the bottom.
+> Status: **task-complete, Anki, and activity gates shipped** (incl.
+> screen-time accrual); **multi-site blocking shipped** (YouTube, TikTok,
+> Facebook, Threads, X, Instagram, sharing one budget). The generic HTTP
+> gate config UI is still on the roadmap. See the bottom.
 
 ## What this feature is
 
 A second, optional feature of ToDoTube, orthogonal to the recommendation
-replacement. When enabled, **YouTube is fully blocked** behind an overlay
-until the user satisfies a configurable **condition**, after which YouTube
-opens **only for a set amount of time**, then blocks again.
+replacement. When enabled, a **user-chosen set of time-sink sites is fully
+blocked** behind an overlay until the user satisfies a configurable
+**condition**, after which the sites open **only for a set amount of time**,
+then block again. All enabled sites draw from **one shared daily budget** —
+time spent on any of them counts against the same allowance (see
+[Multi-site blocking](#shipped-multi-site-blocking)).
 
 The original request (paraphrased):
 
@@ -62,9 +67,9 @@ what unlocks it"). The feature adds two new layers next to `providers/`:
 
 ```
                  ┌─────────────────────────────────────────┐
-   YouTube tab   │ entrypoints/youtube-gate.content.ts       │  (document_start,
-   (any page)    │   → core/gatekeeper/overlay-controller    │   *.youtube.com/*)
-                 │       → surfaces/youtube-site/overlay      │
+   blocked tab   │ entrypoints/blocked-sites.content.ts      │  (document_start,
+   (any blocked  │   → core/gatekeeper/overlay-controller    │   blocklist matches,
+    site)        │       → surfaces/youtube-site/overlay      │   excl. music.youtube)
                  │       → ui/block-screen                    │
                  └───────────────▲───────────────────────────┘
                                  │ GATE_EVAL / GATE_CHANGED (messaging)
@@ -73,7 +78,7 @@ what unlocks it"). The feature adds two new layers next to `providers/`:
    service       │   loadActive → buildContext → gate.evaluate│
    worker        │   ├─ gates/registry  (which gate)          │
                  │   ├─ signals/registry (external sensors)   │
-                 │   ├─ core/gatekeeper/usage (YouTube time)  │
+                 │   ├─ core/gatekeeper/usage (screen time)   │
                  │   └─ shared/storage (gate state, settings) │
                  └────────────────────────────────────────────┘
 ```
@@ -91,22 +96,24 @@ page); the background's settings watcher then broadcasts `GATE_CHANGED`.
 
 ### Files
 
-| File                                             | Role                                                                                                             |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `shared/types.ts`                                | DTOs: `SignalValue`, `GateDecision`, `RequirementView`, `GateEvalResult`, `GatingSettings` (+ `Settings.gating`) |
-| `shared/storage.ts`                              | per-gate state items + YouTube usage record                                                                      |
-| `shared/messaging.ts`                            | `GATE_EVAL`, `YOUTUBE_TICK`, `ANKI_TEST`, broadcast `GATE_CHANGED`                                               |
-| `signals/types.ts`, `signals/registry.ts`        | `Signal` interface + external-sensor registry                                                                    |
-| `gates/types.ts`                                 | `Gate`, `GateContext`, `GateEvent`                                                                               |
-| `gates/task-complete/gate.ts`                    | the first gate (+ `gate.test.ts`)                                                                                |
-| `gates/registry.ts`                              | `getGateOrNull` + `AVAILABLE_GATES`                                                                              |
-| `core/gatekeeper/gatekeeper.ts`                  | decision orchestration + 1-min backstop alarm                                                                    |
-| `core/gatekeeper/usage.ts`                       | local-day YouTube usage tracker (+ test)                                                                         |
-| `core/gatekeeper/overlay-controller.ts`          | content-side overlay show/hide + re-lock                                                                         |
-| `surfaces/youtube-site/overlay.ts`               | full-page overlay (no YouTube selectors; pauses video)                                                           |
-| `ui/block-screen.ts` + `styles/block-screen.css` | renders a `RequirementView`                                                                                      |
-| `entrypoints/youtube-gate.content.ts`            | site-wide content script (`document_start`)                                                                      |
-| `core/options.ts` + `ui/options/sections.ts`     | "Focus mode" settings section                                                                                    |
+| File                                             | Role                                                                                                                               |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/types.ts`                                | DTOs: `SignalValue`, `GateDecision`, `RequirementView`, `GateEvalResult`, `GatingSettings` (+ `Settings.gating`, `blockedSiteIds`) |
+| `shared/blocklist.ts`                            | single source of truth for blockable sites (match patterns, exclude, hostname resolution)                                          |
+| `shared/budget.ts`                               | `remainingBudgetMs` + `formatBudgetClock` (shared by panel, popup, lifecycle)                                                      |
+| `shared/storage.ts`                              | per-gate state items + screen-time usage record                                                                                    |
+| `shared/messaging.ts`                            | `GATE_EVAL`, `USAGE_TICK`, `ANKI_TEST`, `GET_STATE` (+ `budgetMsLeft`), broadcast `GATE_CHANGED`                                   |
+| `signals/types.ts`, `signals/registry.ts`        | `Signal` interface + external-sensor registry                                                                                      |
+| `gates/types.ts`                                 | `Gate`, `GateContext`, `GateEvent`                                                                                                 |
+| `gates/task-complete/gate.ts`                    | the first gate (+ `gate.test.ts`)                                                                                                  |
+| `gates/registry.ts`                              | `getGateOrNull` + `AVAILABLE_GATES`                                                                                                |
+| `core/gatekeeper/gatekeeper.ts`                  | decision orchestration + 1-min backstop alarm                                                                                      |
+| `core/gatekeeper/usage.ts`                       | local-day screen-time tracker, shared across sites (+ test)                                                                        |
+| `core/gatekeeper/overlay-controller.ts`          | content-side overlay show/hide + re-lock; per-site enable check                                                                    |
+| `surfaces/youtube-site/overlay.ts`               | full-page overlay (no YouTube selectors; pauses video)                                                                             |
+| `ui/block-screen.ts` + `styles/block-screen.css` | renders a `RequirementView`                                                                                                        |
+| `entrypoints/blocked-sites.content.ts`           | site-wide content script for every blockable site (`document_start`)                                                               |
+| `core/options.ts` + `ui/options/sections.ts`     | "Blocking" tab: `renderBlockingSection` (site checkboxes) + "Focus mode" (unlock condition)                                        |
 
 ### Layer rules (enforced by ESLint `boundaries`)
 
@@ -137,13 +144,13 @@ grantMinutes` and resets progress. `COMPLETE_TASK` in the background
 
 ## Locked decisions
 
-| #   | Decision                | Choice (date)                                                                                                   |
-| --- | ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| 1   | Blocking scope          | **Whole YouTube site** (separate site-wide content script) — 2026-05-29                                         |
-| 2   | Extensibility           | **Registry (dev plugins) + a generic config gate**; no runtime user code (MV3 forbids remote code) — 2026-05-29 |
-| 3   | First gate              | **task-complete** — 2026-05-29                                                                                  |
-| 4   | Anki source unreachable | **Fail-closed** (block; clear "open Anki" message + easy off switch) — 2026-05-29                               |
-| 5   | "Time spent on YouTube" | **Active YouTube tab** (focused + not idle) — 2026-05-29                                                        |
+| #   | Decision                | Choice (date)                                                                                                                                                          |
+| --- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Blocking scope          | **Whole site, multiple sites** (one site-wide content script over a configurable blocklist) — 2026-05-29; extended to TikTok/Facebook/Threads/X/Instagram — 2026-06-02 |
+| 2   | Extensibility           | **Registry (dev plugins) + a generic config gate**; no runtime user code (MV3 forbids remote code) — 2026-05-29                                                        |
+| 3   | First gate              | **task-complete** — 2026-05-29                                                                                                                                         |
+| 4   | Anki source unreachable | **Fail-closed** (block; clear "open Anki" message + easy off switch) — 2026-05-29                                                                                      |
+| 5   | "Time spent"            | **Active blocked tab** (focused + not idle); one shared tally across all enabled sites — 2026-05-29                                                                    |
 
 ## Extending: adding a new gate
 
@@ -160,14 +167,40 @@ gate**: read a number from a user-configured local HTTP endpoint via a JSON
 path, no code/rebuild — the gating analogue of the user-pasteable selectors
 override.
 
-## Shipped: YouTube usage accrual
+## Shipped: screen-time accrual
 
 `core/gatekeeper/usage.ts` stores `{ day, ms }` with local-day reset. The
 site-wide gate content script (`overlay-controller.ts`) reports a
-`YOUTUBE_TICK` every 20 s **only while** access is allowed and the tab is
+`USAGE_TICK` every 20 s **only while** access is allowed and the tab is
 visible + focused (decision #5); the background accrues it. Backgrounded
 tabs fail the visibility/focus check (and are timer-throttled), so they
 don't accrue. Budget re-evaluation rides the existing 1-minute gate alarm.
+The tally is a single global counter, so every enabled site contributes to
+the same daily total (see below).
+
+## Shipped: multi-site blocking
+
+`shared/blocklist.ts` is the single source of truth for the blockable sites
+(YouTube, TikTok, Facebook, Threads, X, Instagram) — the **only** place
+their domain literals may appear (a CI guard enforces this, mirroring the
+selector guard). It exports the match patterns consumed at build time by both
+the content-script `matches` and the manifest `host_permissions`
+(`wxt.config.ts`), plus `siteForHostname` for runtime resolution.
+
+- **One content script** (`blocked-sites.content.ts`) matches every site,
+  with `excludeMatches` carving out `music.youtube.com` so YouTube Music
+  stays usable.
+- **Per-site enable**: `gating.blockedSiteIds` picks which sites actually
+  block. The overlay controller resolves its host via `siteForHostname`, and
+  a tab whose site isn't enabled stays inert (no overlay, no accrual). It
+  re-checks on `SETTINGS_CHANGED`, so toggling a site takes effect live.
+- **Shared budget**: the spent tally is global, so 10 min on Instagram leaves
+  10 min less for YouTube; once earned − spent hits zero, every enabled site
+  blocks.
+- **Where the timer shows**: YouTube has an in-page panel countdown
+  (`core/lifecycle`); other sites have none, so the **popup** shows the
+  universal `budgetMsLeft` countdown (`GET_STATE`).
+- **Custom user-added domains** are deferred — see `docs/CUSTOM-SITES.md`.
 
 ## Shipped: Anki gate (`anki-budget`)
 
@@ -184,8 +217,8 @@ don't accrue. Budget re-evaluation rides the existing 1-minute gate alarm.
   review-duration column. (No single AnkiConnect action gives time;
   `getNumCardsReviewedToday` is only a count.) 20 s in-memory cache.
 - **`gates/anki-budget/gate.ts`** — `earnedMs = ankiMs × ratio`,
-  `spentMs = youtubeUsageTodayMs`, allowed while `earned > spent`; the block
-  screen shows an earned/watched meter and a "study ~N more min" target.
+  `spentMs = spentTodayMs`, allowed while `earned > spent`; the block
+  screen shows an earned/used meter and a "study ~N more min" target.
   Config: `ratio` (default 1), `failMode` (default `closed`, decision #4).
 - **Onboarding** (options → Focus mode → Anki): an **optional** host
   permission (`optional_host_permissions: http://127.0.0.1:8765/*`) requested

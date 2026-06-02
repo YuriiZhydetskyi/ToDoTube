@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 
 import { setSettings } from '@/shared/storage';
-import { TASK_COMPLETE_GATE_ID, type GateConfig } from '@/shared/types';
+import { DEFAULT_GATING, TASK_COMPLETE_GATE_ID, type GateConfig } from '@/shared/types';
 
 import { evaluateGate } from './gatekeeper';
 
@@ -13,8 +13,8 @@ beforeEach(() => {
 async function enableTaskGate(config: GateConfig = {}): Promise<void> {
   await setSettings({
     gating: {
+      ...DEFAULT_GATING,
       enabled: true,
-      scope: 'site',
       activeGateId: TASK_COMPLETE_GATE_ID,
       gateConfigs: { [TASK_COMPLETE_GATE_ID]: config },
     },

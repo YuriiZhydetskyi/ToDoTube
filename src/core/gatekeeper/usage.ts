@@ -1,11 +1,12 @@
-// YouTube usage tracker — the "spent" side of ledger-style gates (e.g. the
-// Anki budget gate). Tracks wall-clock time attributed to YouTube for the
-// current local day; a new day resets the tally implicitly (readers treat a
-// stale stored `day` as zero).
+// Screen-time usage tracker — the "spent" side of ledger-style gates (e.g.
+// the Anki budget gate). Tracks wall-clock time attributed to ALL enabled
+// blocked sites for the current local day (they share one budget); a new day
+// resets the tally implicitly (readers treat a stale stored `day` as zero).
 //
-// The task-complete gate doesn't consume this yet, but the interface is
-// stable so the Anki gate can plug in without reshaping storage. Wiring the
-// actual accrual (active-tab timing) lands with that gate.
+// The accrual itself is site-agnostic: any blocked site's content script
+// reports its elapsed time here, so the single tally naturally covers the
+// shared budget. The day-rollover logic lives here; storage is the plain
+// { day, ms } record in shared/storage.ts.
 
 import { getUsageRecord, setUsageRecord } from '@/shared/storage';
 
@@ -18,12 +19,12 @@ export function localDayKey(now: number): string {
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
-export async function getYoutubeUsageTodayMs(now: number): Promise<number> {
+export async function getSpentTodayMs(now: number): Promise<number> {
   const rec = await getUsageRecord();
   return rec.day === localDayKey(now) ? rec.ms : 0;
 }
 
-export async function addYoutubeUsageMs(now: number, deltaMs: number): Promise<void> {
+export async function addSpentMs(now: number, deltaMs: number): Promise<void> {
   if (deltaMs <= 0) return;
   const today = localDayKey(now);
   const rec = await getUsageRecord();

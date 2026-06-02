@@ -9,11 +9,12 @@
 import { browser } from 'wxt/browser';
 
 import { evaluateGate } from '@/core/gatekeeper/gatekeeper';
-import { addYoutubeUsageMs } from '@/core/gatekeeper/usage';
+import { addSpentMs } from '@/core/gatekeeper/usage';
 import { METRIC_CATALOG, type MetricId } from '@/gates/activity-budget/constants';
 import { getProviderOrNull } from '@/providers/registry';
 import type { Provider } from '@/providers/types';
 import { getSignalOrNull } from '@/signals/registry';
+import { remainingBudgetMs } from '@/shared/budget';
 import { log } from '@/shared/logger';
 import { err, ok, type Broadcast, type MessageType, type Request } from '@/shared/messaging';
 import { getProviderDescriptor } from '@/shared/providers';
@@ -30,7 +31,7 @@ import {
   type Task,
 } from '@/shared/types';
 
-import { broadcastToYouTubeTabs } from './broadcast';
+import { broadcastToBlockedTabs } from './broadcast';
 import { cachedRead, invalidateTaskCache } from './task-cache';
 
 type HandlerResult = unknown;
@@ -98,7 +99,10 @@ async function handle(req: Request): Promise<HandlerResult> {
       const activeListId = settings.activeProviderId
         ? ((await getProviderState(settings.activeProviderId)).activeListId ?? null)
         : null;
-      return ok({ settings, authenticated, activeListId });
+      // The popup's universal countdown: screen-time left today per the active
+      // budget gate (null when gating is off or the gate isn't budget-style).
+      const budgetMsLeft = remainingBudgetMs(await evaluateGate());
+      return ok({ settings, authenticated, activeListId, budgetMsLeft });
     }
 
     case 'SET_ENABLED': {
@@ -133,9 +137,9 @@ async function handle(req: Request): Promise<HandlerResult> {
       // and block-screen list reflect the completion immediately.
       invalidateTaskCache();
       // Completing a task changes today's earned budget — re-evaluate and
-      // broadcast the (possibly unlocked) decision to all YouTube tabs.
+      // broadcast the (possibly unlocked) decision to all blocked tabs.
       const gate = await evaluateGate();
-      void broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
+      void broadcastToBlockedTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
       return ok(null);
     }
 
@@ -148,7 +152,7 @@ async function handle(req: Request): Promise<HandlerResult> {
       if (!r.ok) return err(r.error);
       invalidateTaskCache();
       const gate = await evaluateGate();
-      void broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
+      void broadcastToBlockedTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
       return ok(null);
     }
 
@@ -176,7 +180,7 @@ async function handle(req: Request): Promise<HandlerResult> {
       if (settings.activeProviderId === req.providerId) {
         await setSettings({ activeProviderId: null });
       }
-      void broadcastToYouTubeTabs({ type: 'AUTH_REQUIRED', providerId: req.providerId });
+      void broadcastToBlockedTabs({ type: 'AUTH_REQUIRED', providerId: req.providerId });
       return ok(null);
     }
 
@@ -196,7 +200,7 @@ async function handle(req: Request): Promise<HandlerResult> {
       invalidateTaskCache();
       const r = await listTasksForUi(provider, req.listId);
       if (!r.ok) return err(r.error);
-      void broadcastToYouTubeTabs({
+      void broadcastToBlockedTabs({
         type: 'TASKS_UPDATED',
         providerId: req.providerId,
         listId: req.listId,
@@ -208,10 +212,10 @@ async function handle(req: Request): Promise<HandlerResult> {
     case 'GATE_EVAL':
       return ok(await enrichWithTasks(await evaluateGate()));
 
-    case 'YOUTUBE_TICK': {
-      // Accrue watch time; re-blocking on budget exhaustion is handled by
+    case 'USAGE_TICK': {
+      // Accrue screen time; re-blocking on budget exhaustion is handled by
       // the 1-minute gate alarm, so we don't re-evaluate on every tick.
-      await addYoutubeUsageMs(Date.now(), req.deltaMs);
+      await addSpentMs(Date.now(), req.deltaMs);
       return ok(null);
     }
 
@@ -267,7 +271,7 @@ export async function listTasksForUi(
 
 /**
  * Called from the alarm tick in `entrypoints/background.ts`. Refreshes
- * the active provider's active list and broadcasts to YouTube tabs.
+ * the active provider's active list and broadcasts to blocked-site tabs.
  * Silent on errors — the next tick will retry.
  */
 export async function runRefresh(): Promise<void> {
@@ -287,7 +291,7 @@ export async function runRefresh(): Promise<void> {
     return;
   }
   await setProviderState(settings.activeProviderId, { lastSyncAt: Date.now() });
-  void broadcastToYouTubeTabs({
+  void broadcastToBlockedTabs({
     type: 'TASKS_UPDATED',
     providerId: settings.activeProviderId as ProviderId,
     listId,
@@ -295,7 +299,7 @@ export async function runRefresh(): Promise<void> {
   });
 }
 
-export { broadcastToYouTubeTabs };
+export { broadcastToBlockedTabs };
 export type { Broadcast };
 
 const KNOWN_TYPES: readonly MessageType[] = [
@@ -311,7 +315,7 @@ const KNOWN_TYPES: readonly MessageType[] = [
   'SET_ENABLED',
   'SET_ACTIVE_LIST',
   'GATE_EVAL',
-  'YOUTUBE_TICK',
+  'USAGE_TICK',
   'ANKI_TEST',
   'HTTP_SIGNAL_TEST',
 ];

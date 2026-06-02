@@ -16,7 +16,7 @@ function ctx(opts: {
 }): GateContext {
   return {
     now: 1_700_000_000_000,
-    youtubeUsageTodayMs: opts.spentMs ?? 0,
+    spentTodayMs: opts.spentMs ?? 0,
     readSignal: async (id) => {
       expect(id).toBe(ANKI_STUDY_SIGNAL_ID);
       if (opts.ankiError) return err(opts.ankiError);
