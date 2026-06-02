@@ -8,7 +8,7 @@
 
 import { browser } from 'wxt/browser';
 
-import { evaluateGate, notifyTaskCompleted } from '@/core/gatekeeper/gatekeeper';
+import { evaluateGate } from '@/core/gatekeeper/gatekeeper';
 import { addYoutubeUsageMs } from '@/core/gatekeeper/usage';
 import { METRIC_CATALOG, type MetricId } from '@/gates/activity-budget/constants';
 import { getProviderOrNull } from '@/providers/registry';
@@ -23,14 +23,64 @@ import { sortTasks } from '@/shared/tasks';
 import {
   ANKI_STUDY_SIGNAL_ID,
   HTTP_SIGNAL_ID,
+  TASK_COMPLETE_GATE_ID,
+  type GateEvalResult,
   type ListId,
   type ProviderId,
   type Task,
 } from '@/shared/types';
 
 import { broadcastToYouTubeTabs } from './broadcast';
+import { cachedRead, invalidateTaskCache } from './task-cache';
 
 type HandlerResult = unknown;
+
+// Provider list reads are cached this long to stay under TickTick's
+// 100-req/min limit. The block screen and the watch panel share the same
+// "open tasks" key, so they cost one fan-out between them, not two.
+const LIST_TTL_MS = 60_000;
+
+function cachedListTasks(
+  provider: Provider,
+  listId: ListId,
+  includeCompleted: boolean,
+): Promise<Result<Task[], string>> {
+  const key = `list:${provider.id}:${listId}:${includeCompleted ? 'all' : 'open'}`;
+  return cachedRead(key, LIST_TTL_MS, () => provider.listTasks(listId, { includeCompleted }));
+}
+
+/**
+ * Attaches the active provider's incomplete task list to a blocked
+ * task-complete gate result so the block screen can render them inline.
+ * No-ops for any other gate or when the decision is already allowed.
+ * Swallows errors so a provider failure never breaks the gate overlay.
+ */
+export async function enrichWithTasks(result: GateEvalResult): Promise<GateEvalResult> {
+  if (!result.gating || result.decision.allowed) return result;
+  if (result.gateId !== TASK_COMPLETE_GATE_ID) return result;
+  try {
+    const settings = await getSettings();
+    if (!settings.activeProviderId) return result;
+    const provider = getProviderOrNull(settings.activeProviderId);
+    if (!provider) return result;
+    const state = await getProviderState(settings.activeProviderId);
+    const listId: ListId =
+      state.activeListId ?? getProviderDescriptor(settings.activeProviderId).defaultListId;
+    // Shares the cached "open tasks" read with the watch panel; we only show
+    // the first few on the block screen.
+    const r = await cachedListTasks(provider, listId, false);
+    if (!r.ok) return result;
+    return {
+      ...result,
+      decision: {
+        ...result.decision,
+        requirement: { ...result.decision.requirement, tasks: r.value.slice(0, 10) },
+      },
+    };
+  } catch {
+    return result;
+  }
+}
 
 export function registerHandlers(): void {
   browser.runtime.onMessage.addListener((raw, _sender) => {
@@ -79,10 +129,26 @@ async function handle(req: Request): Promise<HandlerResult> {
       if (!provider) return err(`Unknown provider: ${req.providerId}`);
       const r = await provider.completeTask(req.projectId, req.taskId);
       if (!r.ok) return err(r.error);
-      // Completing a task may satisfy the active gate — forward the event
-      // and broadcast the (possibly unlocked) decision to all YouTube tabs.
-      const gate = await notifyTaskCompleted(req.providerId, req.taskId);
-      void broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: gate });
+      // The cached task lists are now stale — drop them so the re-evaluation
+      // and block-screen list reflect the completion immediately.
+      invalidateTaskCache();
+      // Completing a task changes today's earned budget — re-evaluate and
+      // broadcast the (possibly unlocked) decision to all YouTube tabs.
+      const gate = await evaluateGate();
+      void broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
+      return ok(null);
+    }
+
+    case 'COMPLETE_GATE_TASK': {
+      const settings = await getSettings();
+      if (!settings.activeProviderId) return err('No active provider');
+      const provider = getProviderOrNull(settings.activeProviderId);
+      if (!provider) return err(`Unknown provider: ${settings.activeProviderId}`);
+      const r = await provider.completeTask(req.projectId, req.taskId);
+      if (!r.ok) return err(r.error);
+      invalidateTaskCache();
+      const gate = await evaluateGate();
+      void broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
       return ok(null);
     }
 
@@ -103,6 +169,9 @@ async function handle(req: Request): Promise<HandlerResult> {
       const provider = getProviderOrNull(req.providerId);
       if (!provider) return err(`Unknown provider: ${req.providerId}`);
       await provider.disconnect();
+      // Drop the disconnected account's cached tasks so a quick reconnect
+      // can't serve pre-disconnect data.
+      invalidateTaskCache();
       const settings = await getSettings();
       if (settings.activeProviderId === req.providerId) {
         await setSettings({ activeProviderId: null });
@@ -123,6 +192,8 @@ async function handle(req: Request): Promise<HandlerResult> {
     case 'REFRESH_NOW': {
       const provider = getProviderOrNull(req.providerId);
       if (!provider) return err(`Unknown provider: ${req.providerId}`);
+      // Manual refresh should bypass the cache and pull fresh data.
+      invalidateTaskCache();
       const r = await listTasksForUi(provider, req.listId);
       if (!r.ok) return err(r.error);
       void broadcastToYouTubeTabs({
@@ -135,7 +206,7 @@ async function handle(req: Request): Promise<HandlerResult> {
     }
 
     case 'GATE_EVAL':
-      return ok(await evaluateGate());
+      return ok(await enrichWithTasks(await evaluateGate()));
 
     case 'YOUTUBE_TICK': {
       // Accrue watch time; re-blocking on budget exhaustion is handled by
@@ -188,7 +259,7 @@ export async function listTasksForUi(
   listId: ListId,
 ): Promise<Result<Task[], string>> {
   const settings = await getSettings();
-  const r = await provider.listTasks(listId, { includeCompleted: settings.showCompleted });
+  const r = await cachedListTasks(provider, listId, settings.showCompleted);
   if (!r.ok) return err(r.error);
   const sorted = sortTasks(r.value, settings.sortBy);
   return ok(settings.maxItems > 0 ? sorted.slice(0, settings.maxItems) : sorted);
@@ -233,6 +304,7 @@ const KNOWN_TYPES: readonly MessageType[] = [
   'LIST_TASKS',
   'AUTH_STATUS',
   'COMPLETE_TASK',
+  'COMPLETE_GATE_TASK',
   'AUTH_START',
   'AUTH_DISCONNECT',
   'REFRESH_NOW',

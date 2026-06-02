@@ -46,4 +46,12 @@ export interface Provider {
    * UI can hand it back here.
    */
   completeTask(projectId: string, taskId: string): Promise<Result<void, string>>;
+
+  /**
+   * List tasks COMPLETED within [since, until] (epoch ms), keyed by the
+   * provider's completion timestamp. Used by the task-budget gate to total
+   * today's earned minutes. Optional: a provider whose API can't surface
+   * completed tasks omits it, and the gate falls back accordingly.
+   */
+  listCompletedTasks?(range: { since: number; until: number }): Promise<Result<Task[], string>>;
 }

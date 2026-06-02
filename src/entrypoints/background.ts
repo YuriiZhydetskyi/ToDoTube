@@ -2,7 +2,12 @@
 // by the browser at any time — anything we do here must be idempotent
 // and pick up its state from persistent storage on every wake.
 
-import { broadcastToYouTubeTabs, registerHandlers, runRefresh } from '@/core/background/handlers';
+import {
+  broadcastToYouTubeTabs,
+  enrichWithTasks,
+  registerHandlers,
+  runRefresh,
+} from '@/core/background/handlers';
 import { onRefreshAlarm, scheduleRefresh } from '@/core/background/refresh';
 import { evaluateGate, onGateAlarm, scheduleGateAlarm } from '@/core/gatekeeper/gatekeeper';
 import { log, setVerbose } from '@/shared/logger';
@@ -59,5 +64,8 @@ async function init(): Promise<void> {
 }
 
 async function broadcastGateState(): Promise<void> {
-  await broadcastToYouTubeTabs({ type: 'GATE_CHANGED', result: await evaluateGate() });
+  await broadcastToYouTubeTabs({
+    type: 'GATE_CHANGED',
+    result: await enrichWithTasks(await evaluateGate()),
+  });
 }

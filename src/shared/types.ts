@@ -150,6 +150,10 @@ export interface RequirementView {
   progress?: { current: number; target: number; unit: string };
   // Optional call-to-action (e.g. "Open TickTick").
   action?: { label: string; url?: string };
+  // Optional task list for task-complete gate: shown on the block screen so
+  // the user can complete a task without leaving YouTube. Populated by the
+  // background handler — gates themselves have no provider access.
+  tasks?: Task[];
 }
 
 export interface GateDecision {

@@ -7,6 +7,7 @@ import { setSettings } from '@/shared/storage';
 import type { Task } from '@/shared/types';
 
 import { listTasksForUi } from './handlers';
+import { invalidateTaskCache } from './task-cache';
 
 function task(id: string, extra: Partial<Task> = {}): Task {
   return { id, projectId: 'p', title: id, completed: false, ...extra };
@@ -32,6 +33,9 @@ function stubProvider(tasks: Task[], onListTasks?: (opts: ListTasksOpts) => void
 
 beforeEach(() => {
   fakeBrowser.reset();
+  // The list cache is module-scoped; clear it so each case sees its own
+  // stub provider's data rather than a prior case's cached read.
+  invalidateTaskCache();
 });
 
 describe('listTasksForUi', () => {

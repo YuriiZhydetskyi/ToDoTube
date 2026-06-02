@@ -23,6 +23,7 @@ function ctx(opts: {
       const value: SignalValue = { kind: 'durationMs', value: opts.ankiMs ?? 0, asOf: 0 };
       return ok(value);
     },
+    readCompletedTasksToday: async () => err('not used by this gate'),
     state: {},
     config: opts.config ?? {},
   };

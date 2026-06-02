@@ -15,7 +15,14 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { log, setVerbose } from '@/shared/logger';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
-import type { ClickBehavior, ListId, Project, ProviderId, Task } from '@/shared/types';
+import type {
+  ClickBehavior,
+  GateEvalResult,
+  ListId,
+  Project,
+  ProviderId,
+  Task,
+} from '@/shared/types';
 import {
   mountEndscreen,
   mountRightRail,
@@ -23,7 +30,13 @@ import {
   type MountHandle,
 } from '@/surfaces/desktop-watch/adapter';
 import { onEndscreenReady, type EndscreenTrigger } from '@/surfaces/desktop-watch/triggers';
-import { panelCss, renderPanel, type PanelHeader, type PanelState } from '@/ui/panel';
+import {
+  formatBudgetClock,
+  panelCss,
+  renderPanel,
+  type PanelHeader,
+  type PanelState,
+} from '@/ui/panel';
 
 const WATCH_PATH = '/watch';
 const REMOUNT_RETRY_INTERVAL_MS = 250;
@@ -55,6 +68,10 @@ interface State {
   // Projects available to the in-panel list picker. Empty until the
   // first successful LIST_PROJECTS call after authentication.
   projects: Project[];
+  // YouTube milliseconds left today per the active budget gate; null when
+  // gating is off or the gate isn't budget-style (then no banner is shown).
+  // Decremented locally each second and re-synced on GATE_CHANGED.
+  budgetMsLeft: number | null;
   ui: UIState;
 
   rightRailMount: MountHandle | null;
@@ -77,6 +94,7 @@ export function start(ctx: ContentScriptContext): void {
     listId: getProviderDescriptor(DEFAULT_PROVIDER).defaultListId,
     tasks: [],
     projects: [],
+    budgetMsLeft: null,
     ui: { kind: 'loading' },
     rightRailMount: null,
     endscreenMount: null,
@@ -85,6 +103,12 @@ export function start(ctx: ContentScriptContext): void {
   };
 
   void initState(state);
+
+  // Live budget countdown: tick the on-screen clock down each second while
+  // the tab is actually consuming budget. Cheap — updates one text node.
+  ctx.setInterval(() => {
+    if (state.ctx.isValid) tickBudget(state);
+  }, 1000);
 
   ctx.addEventListener(window, 'wxt:locationchange', () => {
     log.debug('locationchange:', window.location.href);
@@ -118,6 +142,8 @@ export function start(ctx: ContentScriptContext): void {
         state.authenticated = false;
         setUi(state, { kind: 'disconnected' });
       }
+    } else if (msg.type === 'GATE_CHANGED') {
+      applyGate(state, msg.result);
     }
   });
 
@@ -156,7 +182,52 @@ async function initState(state: State): Promise<void> {
   if (settings.activeProviderId) state.providerId = settings.activeProviderId;
   if (activeListId) state.listId = activeListId;
   evaluate(state);
+  void fetchGate(state);
   if (authenticated) void loadProjects(state);
+}
+
+// Pull the current gate decision so the panel can show the remaining
+// YouTube budget. Cheap (the background already has the decision); the
+// 1-minute GATE_CHANGED broadcast keeps it fresh thereafter.
+async function fetchGate(state: State): Promise<void> {
+  const r = await sendToBackground({ type: 'GATE_EVAL' });
+  if (!state.ctx.isValid || !r.ok) return;
+  applyGate(state, r.value);
+}
+
+function applyGate(state: State, result: GateEvalResult): void {
+  const next = remainingBudgetMs(result);
+  // Re-sync to the authoritative figure and re-render the banner. A full
+  // re-render here is fine — GATE_CHANGED fires ~once a minute, not per second.
+  if (next === state.budgetMsLeft) return;
+  state.budgetMsLeft = next;
+  setUi(state, state.ui);
+}
+
+// Milliseconds earned-but-unspent today, or null when there's no budget to
+// show (gating off, or a gate whose decision carries no earned/spent figures).
+function remainingBudgetMs(result: GateEvalResult): number | null {
+  if (!result.gating) return null;
+  const { earnedMs, spentMs } = result.decision;
+  if (earnedMs === undefined || spentMs === undefined) return null;
+  return Math.max(0, earnedMs - spentMs);
+}
+
+// Per-second countdown. Mirrors the background's accrual condition (visible +
+// focused) so the on-screen clock matches the budget actually being spent;
+// updates only the value node so task rows aren't rebuilt every second.
+function tickBudget(state: State): void {
+  // No panel mounted (e.g. off the watch page) → nothing to display, so don't
+  // mutate the countdown; GATE_CHANGED will resync it when a panel returns.
+  if (!state.rightRailMount && !state.endscreenMount) return;
+  if (state.budgetMsLeft === null || state.budgetMsLeft <= 0) return;
+  if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
+  state.budgetMsLeft = Math.max(0, state.budgetMsLeft - 1000);
+  const text = formatBudgetClock(state.budgetMsLeft);
+  for (const mount of [state.rightRailMount, state.endscreenMount]) {
+    const node = mount?.root.querySelector('.tt-panel__budget-value');
+    if (node) node.textContent = text;
+  }
 }
 
 async function loadProjects(state: State): Promise<void> {
@@ -347,6 +418,7 @@ function buildHeader(state: State): PanelHeader | undefined {
     providerName: provider.displayName,
     webAppUrl: provider.webAppUrl,
     smartListCaption: provider.smartListCaption,
+    budgetMsLeft: state.budgetMsLeft ?? undefined,
     onListChange: (listId) => void onListPicked(state, listId),
     onRefresh: () => {
       void loadProjects(state);

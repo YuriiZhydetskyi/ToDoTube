@@ -14,7 +14,7 @@ import { log } from '@/shared/logger';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
 import type { GateEvalResult, RequirementView } from '@/shared/types';
 import { mountBlockOverlay, type OverlayHandle } from '@/surfaces/youtube-site/overlay';
-import { blockScreenCss, renderBlockScreen } from '@/ui/block-screen';
+import { blockScreenCss, renderBlockScreen, type BlockScreenCallbacks } from '@/ui/block-screen';
 
 // A cold MV3 service worker can miss the very first message after startup,
 // so we retry the initial GATE_EVAL a few times (same pattern as lifecycle).
@@ -35,11 +35,15 @@ interface State {
   // True only when gating is on AND access is currently allowed — gates
   // it whether we accrue watch time.
   allowed: boolean;
+  // Signature of the last-rendered requirement. The 1-minute gate alarm
+  // re-broadcasts an unchanged decision; skipping the re-render preserves
+  // any in-flight task-button state (e.g. a row mid-completion).
+  lastSig: string | null;
 }
 
 export function startGateOverlay(ctx: ContentScriptContext): void {
   log.info('Gate overlay controller started');
-  const state: State = { ctx, overlay: null, relockToken: 0, allowed: false };
+  const state: State = { ctx, overlay: null, relockToken: 0, allowed: false, lastSig: null };
 
   void init(state);
 
@@ -94,14 +98,27 @@ function apply(state: State, result: GateEvalResult): void {
   showOverlay(state, result.decision.requirement);
 }
 
+const blockScreenCallbacks: BlockScreenCallbacks = {
+  onCompleteTask: async (projectId, taskId) => {
+    const r = await sendToBackground({ type: 'COMPLETE_GATE_TASK', projectId, taskId });
+    return r.ok;
+  },
+};
+
 function showOverlay(state: State, requirement: RequirementView): void {
+  const sig = JSON.stringify(requirement);
+  // Already showing this exact requirement → leave the DOM (and any
+  // mid-completion button state) untouched.
+  if (state.overlay && state.lastSig === sig) return;
   if (!state.overlay) {
     state.overlay = mountBlockOverlay({ cssText: blockScreenCss });
   }
-  renderBlockScreen(state.overlay.root, requirement);
+  state.lastSig = sig;
+  renderBlockScreen(state.overlay.root, requirement, blockScreenCallbacks);
 }
 
 function removeOverlay(state: State): void {
+  state.lastSig = null;
   if (state.overlay) {
     try {
       state.overlay.unmount();

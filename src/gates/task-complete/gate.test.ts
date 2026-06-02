@@ -1,82 +1,96 @@
 import { describe, expect, it } from 'vitest';
 
-import { err } from '@/shared/result';
-import type { GateConfig, GateState } from '@/shared/types';
+import { err, ok } from '@/shared/result';
+import type { GateConfig, Task } from '@/shared/types';
 
-import type { GateContext, GateEvent } from '../types';
+import type { GateContext } from '../types';
 import { taskCompleteGate } from './gate';
 
 const NOW = 1_700_000_000_000;
-const TASK_COMPLETED: GateEvent = { type: 'task-completed', providerId: 'ticktick', taskId: 't1' };
+const MIN = 60_000;
 
-function ctx(state: GateState = {}, config: GateConfig = {}, now: number = NOW): GateContext {
+function task(id: string, title: string): Task {
+  return { id, projectId: 'p1', title, completed: true };
+}
+
+function ctx(opts: {
+  completed?: Task[];
+  completedErr?: string;
+  spentMs?: number;
+  config?: GateConfig;
+}): GateContext {
   return {
-    now,
-    youtubeUsageTodayMs: 0,
+    now: NOW,
+    youtubeUsageTodayMs: opts.spentMs ?? 0,
     readSignal: async () => err('no signals in this test'),
-    state,
-    config,
+    readCompletedTasksToday: async () =>
+      opts.completedErr ? err(opts.completedErr) : ok(opts.completed ?? []),
+    state: {},
+    config: opts.config ?? {},
   };
 }
 
 describe('taskCompleteGate.evaluate', () => {
-  it('blocks with a requirement when there is no active session', async () => {
-    const d = await taskCompleteGate.evaluate(ctx());
+  it('blocks when no tasks have been completed today', async () => {
+    const d = await taskCompleteGate.evaluate(ctx({}));
     expect(d.allowed).toBe(false);
-    expect(d.requirement.title).toContain('Complete 1 task');
-    // Single-task gate omits the progress meter.
-    expect(d.requirement.progress).toBeUndefined();
+    expect(d.requirement.title).toContain('Complete a task');
   });
 
-  it('allows while a granted session is still in the future', async () => {
-    const d = await taskCompleteGate.evaluate(ctx({ unlockedUntil: NOW + 5 * 60_000 }));
+  it('grants the per-task default (10 min) for one completed task', async () => {
+    const d = await taskCompleteGate.evaluate(ctx({ completed: [task('t1', 'Buy milk')] }));
     expect(d.allowed).toBe(true);
-    expect(d.allowedUntil).toBe(NOW + 5 * 60_000);
+    expect(d.earnedMs).toBe(10 * MIN);
   });
 
-  it('blocks again once the session has expired', async () => {
-    const d = await taskCompleteGate.evaluate(ctx({ unlockedUntil: NOW - 1 }));
+  it('honours a "(+N min y)" override instead of the default', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({ completed: [task('t1', 'Write report (+30 min y)')] }),
+    );
+    expect(d.earnedMs).toBe(30 * MIN);
+  });
+
+  it('sums default and annotated tasks', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({ completed: [task('t1', 'Plain'), task('t2', 'Big (+30 min y)')] }),
+    );
+    // 10 (default) + 30 (override) = 40
+    expect(d.earnedMs).toBe(40 * MIN);
+  });
+
+  it('respects a configured per-task default', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({ completed: [task('t1', 'A')], config: { minutesPerTask: 25 } }),
+    );
+    expect(d.earnedMs).toBe(25 * MIN);
+  });
+
+  it('blocks once watched time has caught up to earned time', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({ completed: [task('t1', 'A')], spentMs: 10 * MIN }),
+    );
     expect(d.allowed).toBe(false);
+    expect(d.requirement.progress).toEqual({ current: 10, target: 10, unit: 'min' });
   });
 
-  it('shows a progress meter when more than one task is required', async () => {
-    const d = await taskCompleteGate.evaluate(ctx({ progressCount: 1 }, { tasksRequired: 3 }));
-    expect(d.requirement.progress).toEqual({ current: 1, target: 3, unit: 'tasks' });
-  });
-});
-
-describe('taskCompleteGate.onEvent', () => {
-  it('grants the default 30-minute session after one completion', async () => {
-    const out = await taskCompleteGate.onEvent!(TASK_COMPLETED, ctx());
-    expect(out).toBeTruthy();
-    expect(out!.allowed).toBe(true);
-    expect(out!.allowedUntil).toBe(NOW + 30 * 60_000);
-    expect(out!.nextState).toEqual({ unlockedUntil: NOW + 30 * 60_000, progressCount: 0 });
-  });
-
-  it('honors a custom grant duration', async () => {
-    const out = await taskCompleteGate.onEvent!(TASK_COMPLETED, ctx({}, { grantMinutes: 15 }));
-    expect(out!.allowedUntil).toBe(NOW + 15 * 60_000);
-  });
-
-  it('accumulates progress until the threshold, then unlocks', async () => {
-    const first = await taskCompleteGate.onEvent!(TASK_COMPLETED, ctx({}, { tasksRequired: 2 }));
-    expect(first!.allowed).toBeUndefined();
-    expect(first!.nextState).toEqual({ progressCount: 1 });
-
-    const second = await taskCompleteGate.onEvent!(
-      TASK_COMPLETED,
-      ctx({ progressCount: 1 }, { tasksRequired: 2 }),
+  it('treats an explicit "(+0 min y)" as zero, not the default', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({ completed: [task('t1', 'Trivial (+0 min y)')] }),
     );
-    expect(second!.allowed).toBe(true);
-    expect(second!.nextState).toEqual({ unlockedUntil: NOW + 30 * 60_000, progressCount: 0 });
+    expect(d.allowed).toBe(false);
+    expect(d.earnedMs).toBe(0);
   });
 
-  it('ignores completions made during an active session', async () => {
-    const out = await taskCompleteGate.onEvent!(
-      TASK_COMPLETED,
-      ctx({ unlockedUntil: NOW + 60_000 }),
+  it('fails closed (blocks) when the task list is unreachable', async () => {
+    const d = await taskCompleteGate.evaluate(ctx({ completedErr: 'network down' }));
+    expect(d.allowed).toBe(false);
+    expect(d.requirement.title).toContain('Connect');
+  });
+
+  it('fails open (allows) when configured to', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({ completedErr: 'network down', config: { failMode: 'open' } }),
     );
-    expect(out).toBeUndefined();
+    expect(d.allowed).toBe(true);
   });
 });

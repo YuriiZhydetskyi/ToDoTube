@@ -104,3 +104,100 @@
 .tt-block__action:hover {
   filter: brightness(1.08);
 }
+
+/* Task list rendered on the block screen for task-complete gate */
+
+.tt-block__tasks {
+  margin-top: 16px;
+  text-align: left;
+}
+
+.tt-block__tasks-empty {
+  font-size: 13px;
+  color: var(--tt-fg-muted);
+  text-align: center;
+  margin: 0;
+}
+
+.tt-block__task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tt-block__task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--tt-border);
+}
+
+.tt-block__task:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tt-block__task-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--tt-accent);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.tt-block__task-btn:hover {
+  background: var(--tt-accent);
+}
+
+.tt-block__task-btn--loading {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tt-block__task-check {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tt-accent);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tt-block__task-btn:hover .tt-block__task-check {
+  opacity: 1;
+}
+
+.tt-block__task-label {
+  flex: 1;
+  font-size: 14px;
+  color: var(--tt-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tt-block__task-badge {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tt-accent);
+  background: color-mix(in srgb, var(--tt-accent) 16%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.tt-block__task--error {
+  outline: 1px solid #e2554f;
+}

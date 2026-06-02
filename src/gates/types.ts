@@ -15,12 +15,12 @@ import type {
   GateConfigField,
   GateDecision,
   GateState,
-  ProviderId,
   SignalValue,
+  Task,
 } from '@/shared/types';
 
 // Everything a gate needs to make a decision, injected by the core so the
-// gate stays decoupled from storage and from the signals registry.
+// gate stays decoupled from storage, the signals registry, and providers.
 export interface GateContext {
   now: number;
   // The debit side of ledger-style gates: time spent on YouTube today.
@@ -28,14 +28,14 @@ export interface GateContext {
   // Pull an external sensor by id (the core bridges to the signals
   // registry). Returns err for unknown/unreachable signals.
   readSignal: (id: string, config?: unknown) => Promise<Result<SignalValue, string>>;
+  // Tasks the user COMPLETED in the current local day, from the active
+  // provider (the core bridges to providers/, which gates may not import).
+  // The credit side of the task-budget gate. Returns err when no provider
+  // is connected or its API can't surface completed tasks.
+  readCompletedTasksToday: () => Promise<Result<Task[], string>>;
   state: GateState;
   config: GateConfig;
 }
-
-// Domain events the core forwards to the active gate so event-driven gates
-// (e.g. "completing a task grants a session") can react. Poll-driven gates
-// (e.g. an Anki budget) ignore these and rely on `evaluate` alone.
-export type GateEvent = { type: 'task-completed'; providerId: ProviderId; taskId: string };
 
 export interface Gate {
   readonly id: string;
@@ -48,8 +48,4 @@ export interface Gate {
   /** Compute the current decision. Must be side-effect free besides
    * returning `nextState` for the core to persist. */
   evaluate(ctx: GateContext): Promise<GateDecision>;
-
-  /** React to a domain event. Returns a partial decision whose
-   * `nextState` (if any) the core persists before re-evaluating. */
-  onEvent?(event: GateEvent, ctx: GateContext): Promise<Partial<GateDecision> | void>;
 }

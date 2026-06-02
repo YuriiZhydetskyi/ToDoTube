@@ -50,6 +50,11 @@ export interface Schema {
   // watcher then broadcasts GATE_CHANGED — so there's no GATE_SET_* message.
   GATE_EVAL: { req: Empty; res: GateEvalResult };
 
+  // Completes a task via the active provider without the content script
+  // needing to know which provider is active. Used by the block screen's
+  // task list so the user can earn YouTube access without leaving the page.
+  COMPLETE_GATE_TASK: { req: { projectId: string; taskId: string }; res: null };
+
   // Content scripts report active YouTube watch time (the "spent" side of
   // budget gates). The background accrues it against the local-day total.
   YOUTUBE_TICK: { req: { deltaMs: number }; res: null };

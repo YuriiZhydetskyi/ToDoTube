@@ -53,7 +53,26 @@ export const tickTickProvider: Provider = {
   async completeTask(projectId: string, taskId: string): Promise<Result<void, string>> {
     return api.completeTask(projectId, taskId);
   },
+
+  async listCompletedTasks(range: {
+    since: number;
+    until: number;
+  }): Promise<Result<Task[], string>> {
+    const r = await api.getCompletedTasks({
+      startDate: toTickTickDate(range.since),
+      endDate: toTickTickDate(range.until),
+    });
+    if (!r.ok) return err(r.error);
+    return ok(r.value.map(mapTask));
+  },
 };
+
+// TickTick wants ISO-8601 with a numeric offset ("…+0000"), not the "Z"
+// that Date.toISOString() emits. We send UTC instants, so the offset is
+// always +0000.
+function toTickTickDate(ms: number): string {
+  return new Date(ms).toISOString().replace('Z', '+0000');
+}
 
 async function listTasksInProject(
   projectId: string,
