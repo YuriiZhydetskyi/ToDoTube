@@ -12,6 +12,7 @@
 
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
+import { isActiveTab } from '@/shared/active-tab';
 import { log, setVerbose } from '@/shared/logger';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
@@ -213,15 +214,16 @@ function remainingBudgetMs(result: GateEvalResult): number | null {
   return Math.max(0, earnedMs - spentMs);
 }
 
-// Per-second countdown. Mirrors the background's accrual condition (visible +
-// focused) so the on-screen clock matches the budget actually being spent;
-// updates only the value node so task rows aren't rebuilt every second.
+// Per-second countdown. Gated on the same `isActiveTab()` condition as the
+// background's watch-time accrual so the on-screen clock matches the budget
+// actually being spent; updates only the value node so task rows aren't rebuilt
+// every second.
 function tickBudget(state: State): void {
   // No panel mounted (e.g. off the watch page) → nothing to display, so don't
   // mutate the countdown; GATE_CHANGED will resync it when a panel returns.
   if (!state.rightRailMount && !state.endscreenMount) return;
   if (state.budgetMsLeft === null || state.budgetMsLeft <= 0) return;
-  if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
+  if (!isActiveTab()) return;
   state.budgetMsLeft = Math.max(0, state.budgetMsLeft - 1000);
   const text = formatBudgetClock(state.budgetMsLeft);
   for (const mount of [state.rightRailMount, state.endscreenMount]) {
