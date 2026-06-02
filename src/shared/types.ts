@@ -102,7 +102,7 @@ export const ANKI_SETUP_URL = 'https://foosoft.net/projects/anki-connect/#config
 // exposes Garmin — or any fitness source — as local JSON). UI copy shared
 // by the activity-budget gate's block screen and the options page, so it
 // lives here. (The bridge endpoint/port/JSON field names stay single-sourced
-// in signals/http/constants.ts.)
+// in gates/activity-budget/constants.ts.)
 // TODO: point at the published docs URL once the repo is public.
 export const ACTIVITY_BRIDGE_SETUP_URL =
   'https://github.com/Yurii-Stefan/ToDoTube/blob/main/bridge/garmin/README.md';
@@ -210,6 +210,37 @@ export function normalizeBlockedSiteIds(gating: GatingSettings | undefined): str
   return gating?.blockedSiteIds ?? BLOCKED_SITE_IDS;
 }
 
+// ---------------------------------------------------------------------------
+// Multi-device sync subsystem DTOs
+//
+// The "spent" side of the budget can be shared across a user's devices. The
+// transport is pluggable: `off` (this device only), `browser` (browser sync —
+// same-browser desktop only; storage.sync does NOT reach Firefox Android), or a
+// user-supplied HTTP backend (`supabase` / `cloudflare`). See docs/SYNC.md.
+// Behavioral interfaces live in shared/sync-transport.ts; only the persisted
+// settings shape lives here.
+// ---------------------------------------------------------------------------
+
+export type SyncMode = 'off' | 'browser' | 'supabase' | 'cloudflare';
+
+export interface SyncSettings {
+  mode: SyncMode;
+  // Shared secret that groups a user's devices on an HTTP backend (and isolates
+  // them from other users' rows). Empty until an HTTP transport is configured;
+  // the same value is copied to each of the user's devices.
+  syncId: string;
+  // Per-mode user configuration (endpoint URL, key/secret), opaque to the core
+  // — each transport validates its own shape. Mirrors gating.gateConfigs and is
+  // rendered generically from each provider's configSchema.
+  config: Partial<Record<SyncMode, GateConfig>>;
+}
+
+export const DEFAULT_SYNC: SyncSettings = {
+  mode: 'off',
+  syncId: '',
+  config: {},
+};
+
 export interface Settings {
   // Master on/off (popup toggle). When false, content scripts no-op.
   enabled: boolean;
@@ -239,6 +270,10 @@ export interface Settings {
   // recommendation-replacement feature above — a user may run either,
   // both, or neither. See [[project-todotube-gating]].
   gating: GatingSettings;
+
+  // Multi-device sync for the gating "spent" budget. Off by default. See
+  // docs/SYNC.md.
+  sync: SyncSettings;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -256,6 +291,7 @@ export const DEFAULT_SETTINGS: Settings = {
   debugOverlay: false,
   selectorsOverride: null,
   gating: DEFAULT_GATING,
+  sync: DEFAULT_SYNC,
 };
 
 export interface ProviderState {

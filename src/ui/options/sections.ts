@@ -15,12 +15,14 @@ import {
   ACTIVITY_BUDGET_GATE_ID,
   ANKI_BUDGET_GATE_ID,
   DEFAULT_GATING,
+  DEFAULT_SYNC,
   type GateConfig,
   type GateConfigField,
   type GatingSettings,
   normalizeBlockedSiteIds,
   type ProviderId,
   type Settings,
+  type SyncSettings,
 } from '@/shared/types';
 
 import { el, pill, row } from './dom';
@@ -315,6 +317,162 @@ export function renderFocusSection(
     const cfg = effectiveConfig(activeGate.configSchema, gating.gateConfigs[activeGate.id] ?? {});
     container.append(renderBridgeSetup(deps, cfg));
   }
+}
+
+// Sync ("share the budget across devices"). Transport-agnostic UI, like the
+// Focus section: the available providers are passed in by the orchestrator
+// (core/options.ts) so this ui-layer file never imports core/sync. HTTP backends
+// get a generated "sync code" (shared secret), schema-driven connection fields,
+// and a permission + test block.
+export interface SyncSectionDeps {
+  hasHostPermission: (origin: string) => Promise<boolean>;
+  requestHostPermission: (origin: string) => Promise<boolean>;
+}
+
+export function renderSyncSection(
+  container: HTMLElement,
+  settings: Settings,
+  providers: ReadonlyArray<{
+    id: string;
+    displayName: string;
+    description: string;
+    reachesOtherDevices: boolean;
+    configSchema: readonly GateConfigField[];
+  }>,
+  deps?: SyncSectionDeps,
+): void {
+  container.replaceChildren();
+  container.append(el('h2', { class: 'tt-card__title', text: 'Sync' }));
+
+  const sync = settings.sync ?? DEFAULT_SYNC;
+
+  const reRender = (next: SyncSettings): void =>
+    renderSyncSection(container, { ...settings, sync: next }, providers, deps);
+
+  const persist = (patch: Partial<SyncSettings>): SyncSettings => {
+    const next = { ...sync, ...patch };
+    void setSettings({ sync: next });
+    return next;
+  };
+
+  container.append(
+    el('p', {
+      class: 'tt-card__lede',
+      text: 'Share the Focus-mode budget across your devices. Time watched on two devices at once counts only once.',
+    }),
+  );
+
+  container.append(
+    row(
+      'Sync via',
+      enumSelect(
+        sync.mode,
+        providers.map((p) => [p.id, p.displayName] as const),
+        (v) => reRender(persist({ mode: v as SyncSettings['mode'] })),
+      ),
+    ),
+  );
+
+  const active = providers.find((p) => p.id === sync.mode);
+  if (active) container.append(el('p', { class: 'tt-row__help', text: active.description }));
+
+  // 'off' needs nothing more; 'browser' is zero-config (it just works when the
+  // browser account sync is on). Only the HTTP backends need connection details.
+  if (!active || sync.mode === 'off' || sync.mode === 'browser') return;
+
+  // Shared secret that links this user's devices (and isolates them from other
+  // users' rows). The same value must be set on every device.
+  const idInput = textInput(sync.syncId, 'shared code — same on every device', (v) =>
+    persist({ syncId: v }),
+  );
+  const genBtn = el('button', { text: 'Generate', class: 'tt-btn tt-btn--secondary' });
+  genBtn.addEventListener('click', () => reRender(persist({ syncId: crypto.randomUUID() })));
+  container.append(
+    el(
+      'label',
+      { class: 'tt-row tt-row--vertical' },
+      el(
+        'span',
+        { class: 'tt-row__label' },
+        'Sync code',
+        el(
+          'span',
+          { class: 'tt-row__help' },
+          'A secret that links your devices. Generate it once, then paste the same code on your other devices.',
+        ),
+      ),
+      idInput,
+      el('div', { class: 'tt-btn-row' }, genBtn),
+    ),
+  );
+
+  // Backend connection fields, rendered generically from the provider schema.
+  const cfg = sync.config[sync.mode] ?? {};
+  const setCfg = (patch: GateConfig): void => {
+    persist({ config: { ...sync.config, [sync.mode]: { ...cfg, ...patch } } });
+  };
+  for (const field of active.configSchema) {
+    container.append(renderConfigField(field, cfg, setCfg));
+  }
+
+  if (deps) container.append(renderSyncSetup(deps, sync));
+}
+
+// Backend permission + connection-test block for the HTTP sync modes. The host
+// origin is derived from the configured URL at click time (so a user-supplied
+// endpoint still gets the right optional host permission), mirroring the
+// activity-bridge setup block.
+function renderSyncSetup(deps: SyncSectionDeps, sync: SyncSettings): HTMLElement {
+  const { wrap, setStatus, btnRow } = setupBlock();
+
+  const cfg = sync.config[sync.mode] ?? {};
+  const url = typeof cfg.url === 'string' ? cfg.url : '';
+  const originPattern = (() => {
+    try {
+      return `${new URL(url).origin}/*`;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (originPattern) {
+    void deps.hasHostPermission(originPattern).then((granted) => {
+      setStatus(granted ? 'Access granted' : 'Access not granted yet', granted ? 'ok' : 'warn');
+    });
+  } else {
+    setStatus('Enter the backend URL above', 'warn');
+  }
+
+  const allowBtn = el('button', { text: 'Allow access', class: 'tt-btn tt-btn--secondary' });
+  allowBtn.addEventListener('click', () => {
+    if (!originPattern) return;
+    void deps.requestHostPermission(originPattern).then((granted) => {
+      setStatus(granted ? 'Access granted' : 'Permission denied', granted ? 'ok' : 'warn');
+    });
+  });
+
+  const testBtn = el('button', { text: 'Test sync', class: 'tt-btn tt-btn--secondary' });
+  testBtn.addEventListener('click', async () => {
+    setStatus('Testing…', 'muted');
+    const r = await sendToBackground({ type: 'SYNC_TEST' });
+    if (r.ok) setStatus(`Connected — ${r.value.devices} device record(s) today`, 'ok');
+    else setStatus(`Failed: ${r.error}`, 'warn');
+  });
+
+  btnRow.append(allowBtn, testBtn);
+  wrap.prepend(
+    el(
+      'span',
+      { class: 'tt-row__label' },
+      'Backend connection',
+      el(
+        'span',
+        { class: 'tt-row__help' },
+        'Grant access to your backend URL, then test the connection. See docs/SYNC.md.',
+      ),
+    ),
+  );
+  return wrap;
 }
 
 // Merge a gate's config bag over its schema defaults so setup helpers see the

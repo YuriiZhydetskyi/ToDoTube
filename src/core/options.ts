@@ -16,6 +16,7 @@ import '@/ui/styles/options.css';
 import { browser } from 'wxt/browser';
 
 import { AVAILABLE_GATES } from '@/gates/registry';
+import { SYNC_PROVIDERS } from '@/core/sync/registry';
 import { ANKI_HOST_PERMISSION } from '@/signals/anki/constants';
 import { getSettings, onSettingsChange } from '@/shared/storage';
 import { ACTIVITY_BRIDGE_SETUP_URL, ANKI_SETUP_URL } from '@/shared/types';
@@ -28,7 +29,9 @@ import {
   renderBlockingSection,
   renderDisplaySection,
   renderFocusSection,
+  renderSyncSection,
   type FocusSectionDeps,
+  type SyncSectionDeps,
 } from '@/ui/options/sections';
 
 // Gate-setup capabilities handed to the (ui-layer) Focus section, so it needs
@@ -40,6 +43,14 @@ const focusDeps: FocusSectionDeps = {
   ankiSetupUrl: ANKI_SETUP_URL,
   bridgeSetupUrl: ACTIVITY_BRIDGE_SETUP_URL,
   ankiOrigin: ANKI_HOST_PERMISSION,
+  hasHostPermission: (origin) => browser.permissions.contains({ origins: [origin] }),
+  requestHostPermission: (origin) => browser.permissions.request({ origins: [origin] }),
+};
+
+// The Sync section needs the same runtime host-permission calls (for a
+// user-supplied backend origin), kept in core so the ui layer touches neither
+// wxt/browser nor core/sync.
+const syncDeps: SyncSectionDeps = {
   hasHostPermission: (origin) => browser.permissions.contains({ origins: [origin] }),
   requestHostPermission: (origin) => browser.permissions.request({ origins: [origin] }),
 };
@@ -70,7 +81,14 @@ export async function startOptions(root: HTMLElement): Promise<void> {
   // ----- Blocking tab -----
   const blockingSection = el('section', { class: 'tt-card' });
   const focusSection = el('section', { class: 'tt-card' });
-  const blockingPanel = el('div', { class: 'tt-tabpanel' }, blockingSection, focusSection);
+  const syncSection = el('section', { class: 'tt-card' });
+  const blockingPanel = el(
+    'div',
+    { class: 'tt-tabpanel' },
+    blockingSection,
+    focusSection,
+    syncSection,
+  );
 
   // Tab bar: two buttons that swap which panel is visible.
   const tabs: { id: 'todo' | 'blocking'; label: string; panel: HTMLElement }[] = [
@@ -116,6 +134,7 @@ export async function startOptions(root: HTMLElement): Promise<void> {
   renderAboutSection(aboutSection);
   renderBlockingSection(blockingSection, settings);
   renderFocusSection(focusSection, settings, AVAILABLE_GATES, focusDeps);
+  renderSyncSection(syncSection, settings, SYNC_PROVIDERS, syncDeps);
 
   selectTab('todo');
 

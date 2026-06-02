@@ -70,6 +70,9 @@ export interface Schema {
   // catalogue (the ui layer can't import gates/), so the request stays to two
   // plain strings. `value`/`unit` are in the metric's display unit.
   HTTP_SIGNAL_TEST: { req: { url: string; metric: string }; res: { value: number; unit: string } };
+  // Options page "Test sync" — reads the configured backend once and reports how
+  // many device records it can see for today (this device + any others).
+  SYNC_TEST: { req: Empty; res: { devices: number } };
 }
 
 export type MessageType = keyof Schema;

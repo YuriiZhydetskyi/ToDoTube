@@ -21,6 +21,10 @@ export default tseslint.config(
       // The activity bridge is a separate self-hosted package with its own
       // toolchain; it isn't part of the extension build or tsconfig.
       'bridge/**',
+      // Sync backend templates (Cloudflare Worker / Supabase SQL) are
+      // self-hosted by the user with their own runtime globals; not part of the
+      // extension build or tsconfig. See docs/SYNC.md.
+      'backends/**',
     ],
   },
   js.configs.recommended,

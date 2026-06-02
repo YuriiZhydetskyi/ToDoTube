@@ -169,14 +169,19 @@ override.
 
 ## Shipped: screen-time accrual
 
-`core/gatekeeper/usage.ts` stores `{ day, ms }` with local-day reset. The
-site-wide gate content script (`overlay-controller.ts`) reports a
+The site-wide gate content script (`overlay-controller.ts`) reports a
 `USAGE_TICK` every 20 s **only while** access is allowed and the tab is
 visible + focused (decision #5); the background accrues it. Backgrounded
 tabs fail the visibility/focus check (and are timer-throttled), so they
 don't accrue. Budget re-evaluation rides the existing 1-minute gate alarm.
-The tally is a single global counter, so every enabled site contributes to
-the same daily total (see below).
+The tally is a single daily total, so every enabled site contributes to it
+(see below).
+
+`core/gatekeeper/usage.ts` is now a thin facade over `core/sync`: a tick
+becomes a wall-clock **interval** in this device's daily record, and
+`spentTodayMs` is the **union** of all the user's devices' intervals — the
+same single-device behavior when sync is off, plus correct overlap handling
+when it's on. **Multi-device sync is its own subsystem — see `docs/SYNC.md`.**
 
 ## Shipped: multi-site blocking
 

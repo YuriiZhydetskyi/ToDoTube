@@ -60,11 +60,11 @@ end user's own TickTick consent before any request will succeed.
 
 Every manifest permission has exactly one runtime call site:
 
-| Permission | Used by                                                                                                                | Purpose                                                                                                                    |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `storage`  | `src/shared/storage.ts` (entire file is the storage wrapper)                                                           | Persist TickTick OAuth tokens, active list ID, and UI preferences in `browser.storage.local`. Nothing uses `storage.sync`. |
-| `identity` | `src/providers/ticktick/oauth.ts:34` (`getRedirectURL`) and `src/providers/ticktick/oauth.ts:47` (`launchWebAuthFlow`) | Launch TickTick's OAuth consent screen and receive the redirect callback.                                                  |
-| `alarms`   | `src/core/background/refresh.ts:13-21` (`browser.alarms.{clear,create,onAlarm.addListener}`)                           | Periodic task refresh on the user-configured interval.                                                                     |
+| Permission | Used by                                                                                                                | Purpose                                                                                                                                                                                                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `storage`  | `src/shared/storage.ts` (entire file is the storage wrapper)                                                           | Persist OAuth tokens, active list ID, UI preferences, and per-device usage intervals. Everything is `browser.storage.local` **except** the synced budget when the user turns on multi-device sync in `browser` mode, which uses `browser.storage.sync` (see `docs/SYNC.md`). |
+| `identity` | `src/providers/ticktick/oauth.ts:34` (`getRedirectURL`) and `src/providers/ticktick/oauth.ts:47` (`launchWebAuthFlow`) | Launch TickTick's OAuth consent screen and receive the redirect callback.                                                                                                                                                                                                    |
+| `alarms`   | `src/core/background/refresh.ts:13-21` (`browser.alarms.{clear,create,onAlarm.addListener}`)                           | Periodic task refresh on the user-configured interval.                                                                                                                                                                                                                       |
 
 Host permissions:
 
@@ -87,6 +87,17 @@ The gating content script (`entrypoints/blocked-sites.content.ts`) does not
 | `https://api.ticktick.com/*`                 | `src/providers/ticktick/api.ts:83` — single `fetch` against `API_BASE + path`         | Read tasks and mark them complete via TickTick's Open API.                                                                                                          |
 | `https://ticktick.com/*`                     | `src/providers/ticktick/oauth.ts:191` — single `fetch` against `TOKEN_URL`            | OAuth token exchange and refresh.                                                                                                                                   |
 
+### Optional host permissions (requested at runtime, never on install)
+
+Declared as `optional_host_permissions` and requested only from the options page
+on a user gesture, when the matching feature is turned on:
+
+| Optional host             | Requested when                                   | Purpose                                                                                                                                                                                                                                             |
+| ------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http://127.0.0.1:8765/*` | Anki budget gate enabled                         | Read Anki study minutes from a locally-running AnkiConnect. Local only.                                                                                                                                                                             |
+| `http://127.0.0.1:8930/*` | Activity budget gate enabled                     | Read a metric from the locally-running activity bridge. Local only.                                                                                                                                                                                 |
+| `https://*/*`             | Multi-device sync set to `supabase`/`cloudflare` | Read/write the synced budget against the **user's own** backend. We request only the single origin the user typed in (never the whole pattern), and nothing is sent until the user opts in with their endpoint. See `docs/SYNC.md` and `backends/`. |
+
 ## Network audit
 
 Run this from the repo root:
@@ -95,10 +106,18 @@ Run this from the repo root:
 rg -n 'fetch\(|XMLHttpRequest|WebSocket|navigator\.sendBeacon' src/
 ```
 
-Expected output is exactly two `fetch(` call sites (the two listed in
-the host permission table above) plus zero `XMLHttpRequest`, zero
-`WebSocket`, and zero `sendBeacon` calls. No other network primitives
-are reachable from the extension's compiled bundle.
+Expected `fetch(` call sites, and nothing else (zero `XMLHttpRequest`, zero
+`WebSocket`, zero `sendBeacon`):
+
+- `src/providers/ticktick/` — the two TickTick hosts above (always).
+- `src/signals/anki/`, `src/signals/http/` — the two local `127.0.0.1`
+  endpoints, reached only when the matching Focus-mode gate is enabled.
+- `src/core/sync/http-transport.ts` — the **user-configured** sync backend,
+  reached only when multi-device sync is set to `supabase`/`cloudflare`. The
+  destination is whatever URL the user entered; ToDoTube ships no default
+  endpoint and runs no server of its own.
+
+No other network primitives are reachable from the compiled bundle.
 
 ## Storage audit
 
@@ -108,10 +127,12 @@ Run this from the repo root:
 rg -n "storage\.(local|sync|session|managed)\." src/
 ```
 
-You should see only `storage.local` and `storage.session` reads/writes;
-no `storage.sync` and no `storage.managed`. Detailed schema is in
-`src/shared/types.ts` (search for `Settings`, `ProviderState`,
-`OAuthTokens`).
+You should see `storage.local` and `storage.session` reads/writes, and
+`storage.sync` **only** in the sync layer (`src/core/sync/` +
+`src/shared/storage.ts`), used solely for the synced budget when the user turns
+on multi-device sync in `browser` mode (off by default). No `storage.managed`.
+Detailed schema is in `src/shared/types.ts` (search for `Settings`,
+`ProviderState`, `OAuthTokens`, `SyncSettings`) and `docs/SYNC.md`.
 
 ## Privacy
 

@@ -9,7 +9,9 @@
 import { browser } from 'wxt/browser';
 
 import { evaluateGate } from '@/core/gatekeeper/gatekeeper';
-import { addSpentMs } from '@/core/gatekeeper/usage';
+import { recordUsage } from '@/core/gatekeeper/usage';
+import { getRemoteTransport } from '@/core/sync';
+import { localDayKey } from '@/shared/day';
 import { METRIC_CATALOG, type MetricId } from '@/gates/activity-budget/constants';
 import { getProviderOrNull } from '@/providers/registry';
 import type { Provider } from '@/providers/types';
@@ -78,7 +80,10 @@ export async function enrichWithTasks(result: GateEvalResult): Promise<GateEvalR
         requirement: { ...result.decision.requirement, tasks: r.value.slice(0, 10) },
       },
     };
-  } catch {
+  } catch (e) {
+    // Fail soft — a provider hiccup must never break the gate overlay — but
+    // don't swallow silently; surface it for debugging.
+    log.warn('enrichWithTasks failed; returning un-enriched result:', e);
     return result;
   }
 }
@@ -213,9 +218,10 @@ async function handle(req: Request): Promise<HandlerResult> {
       return ok(await enrichWithTasks(await evaluateGate()));
 
     case 'USAGE_TICK': {
-      // Accrue screen time; re-blocking on budget exhaustion is handled by
-      // the 1-minute gate alarm, so we don't re-evaluate on every tick.
-      await addSpentMs(Date.now(), req.deltaMs);
+      // Accrue screen time into this device's interval record (and a throttled
+      // push to the sync transport). Re-blocking on budget exhaustion is handled
+      // by the 1-minute gate alarm, so we don't re-evaluate on every tick.
+      await recordUsage(Date.now(), req.deltaMs);
       return ok(null);
     }
 
@@ -225,6 +231,17 @@ async function handle(req: Request): Promise<HandlerResult> {
       const r = await signal.read();
       if (!r.ok) return err(r.error);
       return ok({ studyMinutesToday: Math.round(r.value.value / 60_000) });
+    }
+
+    case 'SYNC_TEST': {
+      const transport = await getRemoteTransport();
+      if (!transport) return err('Sync is off');
+      try {
+        const records = await transport.listForDay(localDayKey(Date.now()));
+        return ok({ devices: records.length });
+      } catch (e) {
+        return err(e instanceof Error ? e.message : String(e));
+      }
     }
 
     case 'HTTP_SIGNAL_TEST': {
@@ -318,6 +335,7 @@ const KNOWN_TYPES: readonly MessageType[] = [
   'USAGE_TICK',
   'ANKI_TEST',
   'HTTP_SIGNAL_TEST',
+  'SYNC_TEST',
 ];
 
 function isRequest(v: unknown): v is Request {

@@ -4,6 +4,11 @@ import { defineConfig } from 'wxt';
 // Single-sourced from the gating blocklist so the manifest host permissions
 // and the content-script `matches` can never drift (see src/shared/blocklist).
 import { BLOCKED_SITE_MATCHES } from './src/shared/blocklist';
+// Optional-permission patterns, imported from their single source rather than
+// inlined (the CI "no magic constants" guard only scans src/**, so a literal
+// here would slip through — keep them honest by importing).
+import { BRIDGE_HOST_PERMISSION } from './src/gates/activity-budget/constants';
+import { ANKI_HOST_PERMISSION } from './src/signals/anki/constants';
 
 // See https://wxt.dev/api/config.html
 //
@@ -32,12 +37,14 @@ export default defineConfig({
     ],
     // Local HTTP servers reached only when the matching Focus-mode gate is
     // enabled, so these are OPTIONAL host permissions requested from the
-    // options page (a user gesture) when the gate is turned on. The literals
-    // mirror ANKI_HOST_PERMISSION (signals/anki/constants.ts) and
-    // BRIDGE_HOST_PERMISSION (gates/activity-budget/constants.ts). See
-    // docs/GATING.md.
-    //   8765 = AnkiConnect · 8930 = activity bridge (e.g. Garmin)
-    optional_host_permissions: ['http://127.0.0.1:8765/*', 'http://127.0.0.1:8930/*'],
+    // options page (a user gesture) when the gate is turned on. Imported from
+    // their single source (AnkiConnect / activity bridge); see docs/GATING.md.
+    // `https://*/*` is requested at runtime (options page, user gesture) ONLY
+    // when the user configures a self-hosted sync backend (Supabase / Cloudflare
+    // Worker) — we then request the single origin they entered, never the whole
+    // pattern. Sync is off by default and nothing is sent anywhere until the user
+    // opts in with their own endpoint. See docs/SYNC.md and docs/AMO-REVIEW.md.
+    optional_host_permissions: [ANKI_HOST_PERMISSION, BRIDGE_HOST_PERMISSION, 'https://*/*'],
     // Stable Firefox add-on ID so `browser.identity.getRedirectURL()`
     // returns a stable URI we can register with TickTick.
     browser_specific_settings: {
