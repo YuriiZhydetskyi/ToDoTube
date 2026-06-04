@@ -42,3 +42,42 @@ If YouTube ships a redesign and the published extension breaks, you don't have t
 ## Reporting a breakage
 
 Settings → About → **"Report DOM breakage"** opens a pre-filled GitHub issue with your user agent and which strategies tried and failed.
+
+## Regression fixtures
+
+The runtime self-test only fires when a user is on a watch page. To catch
+breakage at **dev time**, the resolver is also pinned against captured real
+watch-page DOM in `src/surfaces/desktop-watch/dom-fixtures.test.ts`.
+
+Each fixture in `src/surfaces/desktop-watch/__fixtures__/*.html` is a sanitized
+`ytd-watch-flexy` subtree whose anchor elements are tagged with
+`data-tt-anchor` / `data-tt-strategy`. The test runs the real `resolve()` for
+each marked anchor and asserts it lands on exactly that element, at no worse a
+strategy than recorded. Geometry is stubbed (jsdom has no layout), so only the
+geometry sub-check is neutralized — the structural checks (tag, `closest`, tile
+counts) run for real.
+
+**What it catches:** a change to `selectors.ts` / `heuristics.ts` /
+`resolver.ts` that stops resolving against known-good DOM, and a primary
+strategy silently degrading to a fallback. **What it does not catch:** live
+YouTube changes — those surface only when you re-capture (below).
+
+### Capturing / refreshing fixtures
+
+```bash
+pnpm fixtures:capture                  # capture the configured pages, headful
+pnpm fixtures:capture <url> [name]     # capture one ad-hoc watch URL
+FIXTURES_HEADLESS=1 pnpm fixtures:capture   # unattended / remote
+```
+
+`scripts/capture-fixtures.ts` drives your locally installed Google Chrome via
+`playwright-core` (no browser download), reuses the extension's **own** resolver
+to mark ground truth (so no YouTube identifier is duplicated outside
+`selectors.ts` / `heuristics.ts`), sanitizes the subtree, and writes the
+fixture. If the resolver can't find a required anchor in a fresh page, it logs
+loudly — that's the signal YouTube changed its DOM and `selectors.ts` needs an
+update. It's a dev tool only: never part of the build, the test run, or CI.
+
+> The endscreen container only exists once a video ends, so a normal capture
+> leaves `endscreenContainer` unmarked. The hand-authored
+> `watch-desktop-baseline.html` covers all four anchors, including the endscreen.

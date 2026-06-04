@@ -20,6 +20,11 @@ points at the (very short) network audit.
 - Node 20 LTS or newer (no native deps).
 - pnpm 10.11.1 (pinned in `package.json` via `packageManager`).
 - No global tooling required.
+- `playwright-core` and `tsx` are **dev-only** dependencies used solely by
+  `scripts/capture-fixtures.ts` to record DOM regression fixtures (see
+  `docs/SELECTORS.md`). They are never imported by `src/`, never part of the
+  build, and ship nothing into the bundle. `playwright-core` downloads no
+  browser; the script drives the developer's own local Chrome.
 
 ## Build steps
 

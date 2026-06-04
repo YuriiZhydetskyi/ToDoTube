@@ -10,3 +10,7 @@ bridge/
 
 # Hand-maintained spec — heavy table padding hurts diffs.
 REQUIREMENTS.md
+
+# Captured/structural DOM regression fixtures — machine-shaped, not code to
+# style. Reformatting them would churn diffs and fight the capture script.
+src/surfaces/desktop-watch/__fixtures__/
