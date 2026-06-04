@@ -186,14 +186,27 @@ export async function putDeviceDayUsage(area: UsageArea, rec: DeviceDayUsage): P
   await storage.setItem<DeviceDayUsage>(usageKey(area, rec.deviceId, rec.day), rec);
 }
 
+// Walk the area snapshot once, invoking `visit` for every key that parses as a
+// usage record. The snapshot+parse skeleton is single-sourced here so the list
+// and prune readers below express only their own predicate. `bareKey` has the
+// area prefix already stripped (re-prefix with `${area}:` to address it).
+async function scanUsage(
+  area: UsageArea,
+  visit: (parsed: { deviceId: string; day: string }, bareKey: string, value: unknown) => void,
+): Promise<void> {
+  const snap = await storage.snapshot(area);
+  for (const [bareKey, value] of Object.entries(snap)) {
+    const parsed = parseUsageKey(bareKey);
+    if (parsed) visit(parsed, bareKey, value);
+  }
+}
+
 // Every device's record for a given day, across the chosen area.
 export async function listDeviceDayUsage(area: UsageArea, day: string): Promise<DeviceDayUsage[]> {
-  const snap = await storage.snapshot(area);
   const out: DeviceDayUsage[] = [];
-  for (const [key, value] of Object.entries(snap)) {
-    const parsed = parseUsageKey(key);
-    if (parsed && parsed.day === day && value) out.push(value as DeviceDayUsage);
-  }
+  await scanUsage(area, (parsed, _bareKey, value) => {
+    if (parsed.day === day && value) out.push(value as DeviceDayUsage);
+  });
   return out;
 }
 
@@ -205,14 +218,10 @@ export async function pruneOwnUsage(
   deviceId: string,
   oldestDay: string,
 ): Promise<void> {
-  const snap = await storage.snapshot(area);
   const stale: StorageItemKey[] = [];
-  for (const key of Object.keys(snap)) {
-    const parsed = parseUsageKey(key);
-    if (parsed && parsed.deviceId === deviceId && parsed.day < oldestDay) {
-      stale.push(`${area}:${key}`);
-    }
-  }
+  await scanUsage(area, (parsed, bareKey) => {
+    if (parsed.deviceId === deviceId && parsed.day < oldestDay) stale.push(`${area}:${bareKey}`);
+  });
   if (stale.length) await storage.removeItems(stale);
 }
 

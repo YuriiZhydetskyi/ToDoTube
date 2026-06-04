@@ -29,6 +29,13 @@ interface HttpSignalConfig {
 const CACHE_MS = 20_000;
 const cache = new Map<string, { value: SignalValue; at: number }>();
 
+// A positive finite multiplier, or 1 for anything else (missing / non-number /
+// zero / negative). Lifted out of parseConfig so the compound guard reads as one
+// named intent rather than an inline ternary.
+function coerceScale(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 1;
+}
+
 function parseConfig(config: unknown): Result<HttpSignalConfig, string> {
   if (typeof config !== 'object' || config === null) {
     return err('HTTP signal requires { url, jsonPath, kind, scale } config');
@@ -38,9 +45,7 @@ function parseConfig(config: unknown): Result<HttpSignalConfig, string> {
     return err('HTTP signal config needs string url and jsonPath');
   }
   const kind: SignalKind = c.kind === 'durationMs' ? 'durationMs' : 'count';
-  const scale =
-    typeof c.scale === 'number' && Number.isFinite(c.scale) && c.scale > 0 ? c.scale : 1;
-  return ok({ url: c.url, jsonPath: c.jsonPath, kind, scale });
+  return ok({ url: c.url, jsonPath: c.jsonPath, kind, scale: coerceScale(c.scale) });
 }
 
 export const httpSignal: Signal = {

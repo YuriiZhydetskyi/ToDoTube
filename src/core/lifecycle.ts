@@ -15,7 +15,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { isActiveTab } from '@/shared/active-tab';
 import { formatBudgetClock, remainingBudgetMs } from '@/shared/budget';
 import { log, setVerbose } from '@/shared/logger';
-import { onBroadcast, sendToBackground } from '@/shared/messaging';
+import { onBroadcast, sendToBackground, type Broadcast } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
 import type {
   ClickBehavior,
@@ -111,37 +111,7 @@ export function start(ctx: ContentScriptContext): void {
     evaluate(state);
   });
 
-  const offBroadcast = onBroadcast((msg) => {
-    if (msg.type === 'SETTINGS_CHANGED') {
-      setVerbose(msg.settings.verboseLogging);
-      state.enabled = msg.settings.enabled;
-      state.replaceRightRail = msg.settings.replaceRightRail;
-      state.replaceEndscreen = msg.settings.replaceEndscreen;
-      state.clickBehavior = msg.settings.clickBehavior;
-      if (msg.settings.activeProviderId) state.providerId = msg.settings.activeProviderId;
-      evaluate(state);
-    } else if (msg.type === 'LIST_CHANGED') {
-      if (msg.providerId === state.providerId && msg.listId !== state.listId) {
-        state.listId = msg.listId;
-        void fetchTasks(state);
-      }
-    } else if (msg.type === 'TASKS_UPDATED') {
-      if (msg.providerId === state.providerId && msg.listId === state.listId) {
-        state.tasks = msg.tasks;
-        setUi(
-          state,
-          msg.tasks.length === 0 ? { kind: 'empty' } : { kind: 'list', tasks: msg.tasks },
-        );
-      }
-    } else if (msg.type === 'AUTH_REQUIRED') {
-      if (msg.providerId === state.providerId) {
-        state.authenticated = false;
-        setUi(state, { kind: 'disconnected' });
-      }
-    } else if (msg.type === 'GATE_CHANGED') {
-      applyGate(state, msg.result);
-    }
-  });
+  const offBroadcast = onBroadcast((msg) => broadcastHandlers[msg.type](state, msg as never));
 
   ctx.onInvalidated(() => {
     log.debug('script invalidated; tearing down');
@@ -190,6 +160,55 @@ async function fetchGate(state: State): Promise<void> {
   if (!state.ctx.isValid || !r.ok) return;
   applyGate(state, r.value);
 }
+
+// One handler per broadcast type, dispatched by `broadcastHandlers` below.
+// Each mutates `state` for its message and re-renders/fetches as needed; the
+// per-type guards (provider/list match) live inside the relevant handler.
+function applySettingsChanged(
+  state: State,
+  msg: Extract<Broadcast, { type: 'SETTINGS_CHANGED' }>,
+): void {
+  setVerbose(msg.settings.verboseLogging);
+  state.enabled = msg.settings.enabled;
+  state.replaceRightRail = msg.settings.replaceRightRail;
+  state.replaceEndscreen = msg.settings.replaceEndscreen;
+  state.clickBehavior = msg.settings.clickBehavior;
+  if (msg.settings.activeProviderId) state.providerId = msg.settings.activeProviderId;
+  evaluate(state);
+}
+
+function applyListChanged(state: State, msg: Extract<Broadcast, { type: 'LIST_CHANGED' }>): void {
+  if (msg.providerId === state.providerId && msg.listId !== state.listId) {
+    state.listId = msg.listId;
+    void fetchTasks(state);
+  }
+}
+
+function applyTasksUpdated(state: State, msg: Extract<Broadcast, { type: 'TASKS_UPDATED' }>): void {
+  if (msg.providerId === state.providerId && msg.listId === state.listId) {
+    state.tasks = msg.tasks;
+    setUi(state, msg.tasks.length === 0 ? { kind: 'empty' } : { kind: 'list', tasks: msg.tasks });
+  }
+}
+
+function applyAuthRequired(state: State, msg: Extract<Broadcast, { type: 'AUTH_REQUIRED' }>): void {
+  if (msg.providerId === state.providerId) {
+    state.authenticated = false;
+    setUi(state, { kind: 'disconnected' });
+  }
+}
+
+// Dispatch table for background broadcasts. The mapped type makes a missing or
+// extra key a compile error, so a new Broadcast variant must be handled here.
+const broadcastHandlers: {
+  [T in Broadcast['type']]: (state: State, msg: Extract<Broadcast, { type: T }>) => void;
+} = {
+  SETTINGS_CHANGED: applySettingsChanged,
+  LIST_CHANGED: applyListChanged,
+  TASKS_UPDATED: applyTasksUpdated,
+  AUTH_REQUIRED: applyAuthRequired,
+  GATE_CHANGED: (state, msg) => applyGate(state, msg.result),
+};
 
 function applyGate(state: State, result: GateEvalResult): void {
   const next = remainingBudgetMs(result);

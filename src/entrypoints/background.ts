@@ -49,6 +49,13 @@ async function init(): Promise<void> {
   // on the gate alarm above to re-read. Re-subscribed when the sync mode changes.
   await resubscribeRemote();
 
+  wireSettingsWatch();
+  wireProviderWatch();
+}
+
+// Re-schedule refresh / re-subscribe remote / broadcast on every settings change,
+// and always push the new settings + gate decision to content scripts.
+function wireSettingsWatch(): void {
   onSettingsChange((next, prev) => {
     setVerbose(next.verboseLogging);
 
@@ -63,9 +70,11 @@ async function init(): Promise<void> {
     // Gating config lives in settings too; refresh gate decisions.
     void broadcastGateState();
   });
+}
 
-  // Provider-state changes (especially activeListId set from the
-  // options page) need their own signal — they don't live in `settings`.
+// Provider-state changes (especially activeListId set from the options page)
+// need their own signal — they don't live in `settings`.
+function wireProviderWatch(): void {
   for (const providerId of PROVIDER_IDS) {
     onProviderStateChange(providerId, (next, prev) => {
       const nextList = next.activeListId;
