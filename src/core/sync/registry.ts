@@ -1,13 +1,15 @@
 // One-stop lookup from a SyncMode to its remote transport + the metadata the
 // options page renders. Mirrors gates/registry.ts: adding a backend is one
-// entry here plus (for HTTP backends) one request-builder flavor in
-// http-transport.ts.
+// entry here plus its transport — either a new flavor of the shared `/usage`
+// protocol in http-transport.ts (Supabase, Cloudflare) or a dedicated adapter
+// when the backend speaks something else (Upstash speaks the Redis REST API).
 
 import type { SyncProviderDescriptor, SyncTransport } from '@/shared/sync-transport';
 import type { SyncSettings } from '@/shared/types';
 
 import { createBrowserStorageTransport } from './browser-storage-transport';
 import { createHttpTransport } from './http-transport';
+import { createUpstashTransport } from './upstash-transport';
 
 // Display metadata + config schema for each selectable mode. Passed to the
 // (ui-layer) options page; the page renders `configSchema` with the same
@@ -77,6 +79,31 @@ export const SYNC_PROVIDERS: readonly SyncProviderDescriptor[] = [
       },
     ],
   },
+  {
+    id: 'upstash',
+    displayName: 'Upstash Redis',
+    description:
+      'Your own Upstash Redis (no idle pause, no server code). Reaches every device, including Android.',
+    reachesOtherDevices: true,
+    configSchema: [
+      {
+        kind: 'text',
+        key: 'url',
+        label: 'REST URL',
+        help: 'Upstash console → your database → REST API → UPSTASH_REDIS_REST_URL.',
+        default: '',
+        placeholder: 'https://xxxx.upstash.io',
+      },
+      {
+        kind: 'text',
+        key: 'token',
+        label: 'REST token',
+        help: 'REST API → UPSTASH_REDIS_REST_TOKEN (read-write).',
+        default: '',
+        placeholder: '••••••••',
+      },
+    ],
+  },
 ];
 
 // Build the remote transport for the active mode, or null when sync is off (the
@@ -92,6 +119,8 @@ export function createRemoteTransport(sync: SyncSettings): SyncTransport | null 
       return createHttpTransport('supabase', sync);
     case 'cloudflare':
       return createHttpTransport('cloudflare', sync);
+    case 'upstash':
+      return createUpstashTransport(sync);
     default:
       return null;
   }

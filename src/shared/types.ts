@@ -216,12 +216,12 @@ export function normalizeBlockedSiteIds(gating: GatingSettings | undefined): str
 // The "spent" side of the budget can be shared across a user's devices. The
 // transport is pluggable: `off` (this device only), `browser` (browser sync —
 // same-browser desktop only; storage.sync does NOT reach Firefox Android), or a
-// user-supplied HTTP backend (`supabase` / `cloudflare`). See docs/SYNC.md.
-// Behavioral interfaces live in shared/sync-transport.ts; only the persisted
-// settings shape lives here.
+// user-supplied HTTP backend (`supabase` / `cloudflare` / `upstash`). See
+// docs/SYNC.md. Behavioral interfaces live in shared/sync-transport.ts; only the
+// persisted settings shape lives here.
 // ---------------------------------------------------------------------------
 
-export type SyncMode = 'off' | 'browser' | 'supabase' | 'cloudflare';
+export type SyncMode = 'off' | 'browser' | 'supabase' | 'cloudflare' | 'upstash';
 
 export interface SyncSettings {
   mode: SyncMode;

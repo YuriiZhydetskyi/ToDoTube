@@ -28,6 +28,21 @@ export interface DeviceDayUsage {
   intervals: Interval[];
 }
 
+// Defensively coerce an untrusted `intervals` value (a row fetched from a
+// user-controlled sync backend) into normalised Interval[], dropping any entry
+// that isn't a {start:number,end:number} pair. A non-array yields []. Shared by
+// the HTTP and Upstash transports so backend parsing stays in one place.
+export function coerceIntervals(raw: unknown): Interval[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Interval[] = [];
+  for (const iv of raw) {
+    if (!iv || typeof iv !== 'object') continue;
+    const { start, end } = iv as Record<string, unknown>;
+    if (typeof start === 'number' && typeof end === 'number') out.push({ start, end });
+  }
+  return out;
+}
+
 // Two same-device intervals no more than this apart are merged into one. Set to
 // the usage-tick cadence (~20s): consecutive ticks during continuous watching
 // land about one tick apart and must merge into a single session, while a real

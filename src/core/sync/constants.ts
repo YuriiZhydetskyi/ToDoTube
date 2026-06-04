@@ -12,3 +12,9 @@ export const USAGE_KEEP_DAYS = 2;
 // the remote transport (browser sync / HTTP backend) is throttled to limit
 // network chatter. The 1-minute gate alarm forces a push as a backstop.
 export const REMOTE_PUSH_THROTTLE_MS = 60_000;
+
+// Time-to-live set on each per-day Redis key by the Upstash transport. Generous
+// margin past the few days we ever read (USAGE_KEEP_DAYS) so the remote store
+// auto-prunes stale days instead of growing forever — the Redis equivalent of
+// the Supabase/Cloudflare backends' housekeeping. Refreshed on every push.
+export const UPSTASH_KEY_TTL_SECONDS = 7 * 24 * 60 * 60;

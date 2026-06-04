@@ -74,12 +74,13 @@ Pluggable behind the `SyncTransport` port
 ([`src/core/sync/registry.ts`](../src/core/sync/registry.ts)) maps the chosen
 `Settings.sync.mode` to an adapter and supplies the options-page metadata.
 
-| mode         | reaches                        | backend        | notes                                |
-| ------------ | ------------------------------ | -------------- | ------------------------------------ |
-| `off`        | this device only               | local storage  | default                              |
-| `browser`    | same-browser **desktops** only | `storage.sync` | zero config; **not** Firefox Android |
-| `supabase`   | every device, incl. Android    | your Supabase  | free tier pauses after ~7 days idle  |
-| `cloudflare` | every device, incl. Android    | your Worker    | no idle pause                        |
+| mode         | reaches                        | backend        | notes                                     |
+| ------------ | ------------------------------ | -------------- | ----------------------------------------- |
+| `off`        | this device only               | local storage  | default                                   |
+| `browser`    | same-browser **desktops** only | `storage.sync` | zero config; **not** Firefox Android      |
+| `supabase`   | every device, incl. Android    | your Supabase  | free tier pauses after ~7 days idle       |
+| `cloudflare` | every device, incl. Android    | your Worker    | no idle pause                             |
+| `upstash`    | every device, incl. Android    | your Redis     | no idle pause; no server code; TTL-pruned |
 
 The HTTP backends are **self-hosted** (the user runs their own — see
 [`backends/`](../backends)), which keeps ToDoTube's zero-telemetry stance: no
@@ -98,6 +99,25 @@ One protocol, two flavors ([`src/core/sync/http-transport.ts`](../src/core/sync/
   their devices (and, in a multi-tenant store, isolates them from others).
   **`deviceId`** partitions writes.
 
+### Upstash Redis (a separate adapter)
+
+Upstash doesn't expose the `/usage` protocol — it's the Redis REST API — so it
+gets its own adapter
+([`src/core/sync/upstash-transport.ts`](../src/core/sync/upstash-transport.ts))
+rather than a third http-transport flavor:
+
+- **Data model:** one Redis **hash** per `(syncId, day)`, keyed
+  `todotube:usage:{syncId}:{day}`, field = `deviceId` →
+  `JSON.stringify(intervals)`. Per-field `HSET` keeps the partition-by-device
+  invariant (no read-modify-write, no write conflicts).
+- **Read:** `POST {url}` body `["HGETALL", key]` → a flat `[field, value, …]`
+  array, paired back into records.
+- **Upsert own:** `POST {url}/pipeline` body
+  `[["HSET", key, deviceId, json], ["EXPIRE", key, ttl]]`.
+- **Auth:** `Authorization: Bearer <REST token>`.
+- **TTL** (`UPSTASH_KEY_TTL_SECONDS`) on each day-key auto-prunes stale days, so
+  there's no server-side housekeeping (unlike the SQL/Worker backends).
+
 ## What is NOT synced
 
 Only **`spent`**. `earned` is computed locally per device from its signals (Anki
@@ -113,6 +133,8 @@ That's fine: the thing that must not be cheatable across devices is the **debit*
   well under `storage.sync`'s 8 KB/item limit (a normal day is a few intervals).
 - Keys are single-sourced in [`src/shared/storage.ts`](../src/shared/storage.ts)
   (`todotube:usage:{deviceId}:{day}`), per the "no magic constants" rule.
+- The Upstash backend additionally sets a TTL (`UPSTASH_KEY_TTL_SECONDS`) on each
+  remote day-key, so stale days expire server-side without a housekeeping job.
 
 ## Migration
 

@@ -11,8 +11,8 @@
 // (Supabase) or a bearer secret (Cloudflare). No onRemoteChange — the 1-minute
 // gate alarm re-reads, which is how other devices' updates surface.
 
+import { coerceIntervals, type DeviceDayUsage } from '@/shared/intervals';
 import { log } from '@/shared/logger';
-import type { DeviceDayUsage, Interval } from '@/shared/intervals';
 import type { SyncTransport } from '@/shared/sync-transport';
 import type { SyncSettings } from '@/shared/types';
 
@@ -33,20 +33,6 @@ function readConfig(flavor: HttpFlavor, sync: SyncSettings): HttpConfig {
   };
 }
 
-// Coerce a raw `intervals` field into normalised Interval[], dropping any entry
-// that isn't a {start:number,end:number} pair. A non-array yields [] (callers
-// guard the row-level Array.isArray separately, see toRecord).
-function toIntervals(raw: unknown): Interval[] {
-  if (!Array.isArray(raw)) return [];
-  const out: Interval[] = [];
-  for (const iv of raw) {
-    if (!iv || typeof iv !== 'object') continue;
-    const { start, end } = iv as Record<string, unknown>;
-    if (typeof start === 'number' && typeof end === 'number') out.push({ start, end });
-  }
-  return out;
-}
-
 // Defensively coerce a backend row into a DeviceDayUsage. Tolerates either the
 // camelCase wire shape (Cloudflare) or the snake_case column shape (Supabase).
 // A row whose `intervals` isn't an array is rejected wholesale (not coerced to
@@ -59,7 +45,7 @@ function toRecord(row: unknown): DeviceDayUsage | null {
   if (typeof deviceId !== 'string' || typeof day !== 'string' || !Array.isArray(r.intervals)) {
     return null;
   }
-  return { deviceId, day, intervals: toIntervals(r.intervals) };
+  return { deviceId, day, intervals: coerceIntervals(r.intervals) };
 }
 
 export function createHttpTransport(flavor: HttpFlavor, sync: SyncSettings): SyncTransport {

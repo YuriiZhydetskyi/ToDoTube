@@ -92,11 +92,11 @@ The gating content script (`entrypoints/blocked-sites.content.ts`) does not
 Declared as `optional_host_permissions` and requested only from the options page
 on a user gesture, when the matching feature is turned on:
 
-| Optional host             | Requested when                                   | Purpose                                                                                                                                                                                                                                             |
-| ------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `http://127.0.0.1:8765/*` | Anki budget gate enabled                         | Read Anki study minutes from a locally-running AnkiConnect. Local only.                                                                                                                                                                             |
-| `http://127.0.0.1:8930/*` | Activity budget gate enabled                     | Read a metric from the locally-running activity bridge. Local only.                                                                                                                                                                                 |
-| `https://*/*`             | Multi-device sync set to `supabase`/`cloudflare` | Read/write the synced budget against the **user's own** backend. We request only the single origin the user typed in (never the whole pattern), and nothing is sent until the user opts in with their endpoint. See `docs/SYNC.md` and `backends/`. |
+| Optional host             | Requested when                                             | Purpose                                                                                                                                                                                                                                             |
+| ------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http://127.0.0.1:8765/*` | Anki budget gate enabled                                   | Read Anki study minutes from a locally-running AnkiConnect. Local only.                                                                                                                                                                             |
+| `http://127.0.0.1:8930/*` | Activity budget gate enabled                               | Read a metric from the locally-running activity bridge. Local only.                                                                                                                                                                                 |
+| `https://*/*`             | Multi-device sync set to `supabase`/`cloudflare`/`upstash` | Read/write the synced budget against the **user's own** backend. We request only the single origin the user typed in (never the whole pattern), and nothing is sent until the user opts in with their endpoint. See `docs/SYNC.md` and `backends/`. |
 
 ## Network audit
 
@@ -112,10 +112,11 @@ Expected `fetch(` call sites, and nothing else (zero `XMLHttpRequest`, zero
 - `src/providers/ticktick/` — the two TickTick hosts above (always).
 - `src/signals/anki/`, `src/signals/http/` — the two local `127.0.0.1`
   endpoints, reached only when the matching Focus-mode gate is enabled.
-- `src/core/sync/http-transport.ts` — the **user-configured** sync backend,
-  reached only when multi-device sync is set to `supabase`/`cloudflare`. The
-  destination is whatever URL the user entered; ToDoTube ships no default
-  endpoint and runs no server of its own.
+- `src/core/sync/http-transport.ts` and `src/core/sync/upstash-transport.ts` —
+  the **user-configured** sync backend, reached only when multi-device sync is
+  set to `supabase`/`cloudflare` (http-transport) or `upstash`
+  (upstash-transport). The destination is whatever URL the user entered;
+  ToDoTube ships no default endpoint and runs no server of its own.
 
 No other network primitives are reachable from the compiled bundle.
 
