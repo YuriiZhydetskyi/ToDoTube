@@ -13,6 +13,13 @@ export const USAGE_KEEP_DAYS = 2;
 // network chatter. The 1-minute gate alarm forces a push as a backstop.
 export const REMOTE_PUSH_THROTTLE_MS = 60_000;
 
+// Hard timeout for a single remote sync request (read or write). The read sits
+// on the gate-decision hot path (popup + the block overlay), so this is kept
+// short: a healthy backend answers in well under a second, while a hung one is
+// bounded here instead of stalling the decision. On timeout the read falls back
+// to local-only usage and a write is retried on the next push / gate alarm.
+export const SYNC_FETCH_TIMEOUT_MS = 5_000;
+
 // Time-to-live set on each per-day Redis key by the Upstash transport. Generous
 // margin past the few days we ever read (USAGE_KEEP_DAYS) so the remote store
 // auto-prunes stale days instead of growing forever — the Redis equivalent of

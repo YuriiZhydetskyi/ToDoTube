@@ -21,6 +21,12 @@ export const TOKEN_URL = 'https://ticktick.com/oauth/token';
 export const API_BASE = 'https://api.ticktick.com';
 export const WEB_APP_URL = 'https://ticktick.com/webapp/';
 
+// Hard timeout for a single TickTick API request. These reads sit on the gate
+// hot path (the task-budget gate awaits the completed-tasks call), so a hung
+// connection would otherwise stall the decision; on timeout the call returns a
+// network error and the gate applies its fail mode / last-known total.
+export const API_TIMEOUT_MS = 10_000;
+
 // `tasks:write` is required for click-to-complete. Space-separated per
 // the OAuth2 spec.
 export const SCOPES = 'tasks:read tasks:write';

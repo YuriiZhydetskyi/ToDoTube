@@ -29,6 +29,12 @@ interface HttpSignalConfig {
 const CACHE_MS = 20_000;
 const cache = new Map<string, { value: SignalValue; at: number }>();
 
+// Hard timeout for one bridge read. Generous (a cold bridge may do a live
+// upstream fetch before answering, e.g. Garmin Connect), since the goal is to
+// bound a hung endpoint, not a slow-but-live one — a timeout is reported as
+// `err`, which the gate turns into its fail-open/closed policy.
+const FETCH_TIMEOUT_MS = 8_000;
+
 // A positive finite multiplier, or 1 for anything else (missing / non-number /
 // zero / negative). Lifted out of parseConfig so the compound guard reads as one
 // named intent rather than an inline ternary.
@@ -62,7 +68,7 @@ export const httpSignal: Signal = {
     const hit = cache.get(key);
     if (hit && now - hit.at < CACHE_MS) return ok(hit.value);
 
-    const raw = await fetchJsonNumber(url, jsonPath);
+    const raw = await fetchJsonNumber(url, jsonPath, FETCH_TIMEOUT_MS);
     if (!raw.ok) return err(raw.error);
 
     const value: SignalValue = { kind, value: raw.value * scale, asOf: now };

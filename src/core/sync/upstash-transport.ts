@@ -11,12 +11,13 @@
 // other backends' housekeeping). No onRemoteChange — the 1-minute gate alarm
 // re-reads, which is how other devices' updates surface (see sync-transport.ts).
 
+import { fetchWithTimeout } from '@/shared/fetch';
 import { coerceIntervals, type DeviceDayUsage } from '@/shared/intervals';
 import { log } from '@/shared/logger';
 import type { SyncTransport } from '@/shared/sync-transport';
 import type { SyncSettings } from '@/shared/types';
 
-import { UPSTASH_KEY_TTL_SECONDS } from './constants';
+import { SYNC_FETCH_TIMEOUT_MS, UPSTASH_KEY_TTL_SECONDS } from './constants';
 
 interface UpstashConfig {
   url: string;
@@ -53,11 +54,15 @@ export function createUpstashTransport(sync: SyncSettings): SyncTransport {
   // device whose value is unparseable rather than failing the whole read.
   async function listForDay(day: string): Promise<DeviceDayUsage[]> {
     if (!configured) return [];
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify(['HGETALL', key(day)]),
-    });
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify(['HGETALL', key(day)]),
+      },
+      SYNC_FETCH_TIMEOUT_MS,
+    );
     const flat = await commandResult(res);
     if (!Array.isArray(flat)) return [];
 
@@ -77,14 +82,18 @@ export function createUpstashTransport(sync: SyncSettings): SyncTransport {
   // Upsert this device's field and refresh the key's TTL in one pipeline.
   async function putOwn(rec: DeviceDayUsage): Promise<void> {
     if (!configured) return;
-    const res = await fetch(`${url}/pipeline`, {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify([
-        ['HSET', key(rec.day), rec.deviceId, JSON.stringify(rec.intervals)],
-        ['EXPIRE', key(rec.day), UPSTASH_KEY_TTL_SECONDS],
-      ]),
-    });
+    const res = await fetchWithTimeout(
+      `${url}/pipeline`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify([
+          ['HSET', key(rec.day), rec.deviceId, JSON.stringify(rec.intervals)],
+          ['EXPIRE', key(rec.day), UPSTASH_KEY_TTL_SECONDS],
+        ]),
+      },
+      SYNC_FETCH_TIMEOUT_MS,
+    );
     if (!res.ok) throw new Error(`sync write failed: ${res.status}`);
   }
 

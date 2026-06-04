@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { localDayKey } from '@/shared/day';
 import { err, ok } from '@/shared/result';
-import type { GateConfig, Task } from '@/shared/types';
+import type { GateConfig, GateState, Task } from '@/shared/types';
 
 import type { GateContext } from '../types';
 import { taskCompleteGate } from './gate';
 
 const NOW = 1_700_000_000_000;
+const TODAY = localDayKey(NOW);
 const MIN = 60_000;
 
 function task(id: string, title: string): Task {
@@ -18,6 +20,7 @@ function ctx(opts: {
   completedErr?: string;
   spentMs?: number;
   config?: GateConfig;
+  state?: GateState;
 }): GateContext {
   return {
     now: NOW,
@@ -25,7 +28,7 @@ function ctx(opts: {
     readSignal: async () => err('no signals in this test'),
     readCompletedTasksToday: async () =>
       opts.completedErr ? err(opts.completedErr) : ok(opts.completed ?? []),
-    state: {},
+    state: opts.state ?? {},
     config: opts.config ?? {},
   };
 }
@@ -81,16 +84,69 @@ describe('taskCompleteGate.evaluate', () => {
     expect(d.earnedMs).toBe(0);
   });
 
-  it('fails closed (blocks) when the task list is unreachable', async () => {
-    const d = await taskCompleteGate.evaluate(ctx({ completedErr: 'network down' }));
+  // --- last-known-good caching + fail mode --------------------------------
+
+  it("caches today's earned total as nextState on a successful read", async () => {
+    const d = await taskCompleteGate.evaluate(ctx({ completed: [task('t1', 'A')] }));
+    expect(d.nextState).toEqual({ day: TODAY, earnedMs: 10 * MIN });
+  });
+
+  it('skips the state write when the cached total is unchanged', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({ completed: [task('t1', 'A')], state: { day: TODAY, earnedMs: 10 * MIN } }),
+    );
+    expect(d.nextState).toBeUndefined();
+  });
+
+  it("falls back to today's cached earned total when the list is unreachable", async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({
+        completedErr: 'network down',
+        spentMs: 5 * MIN,
+        state: { day: TODAY, earnedMs: 30 * MIN },
+      }),
+    );
+    expect(d.allowed).toBe(true);
+    expect(d.earnedMs).toBe(30 * MIN);
+    expect(d.spentMs).toBe(5 * MIN);
+    // A failed read must never overwrite the cached total.
+    expect(d.nextState).toBeUndefined();
+  });
+
+  it('stays blocked on the cached total when it is exhausted', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({
+        completedErr: 'down',
+        spentMs: 40 * MIN,
+        state: { day: TODAY, earnedMs: 30 * MIN },
+      }),
+    );
+    expect(d.allowed).toBe(false);
+    expect(d.requirement.detail).toContain('last known total');
+  });
+
+  it('ignores a stale cache from a previous day and applies the fail mode', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({
+        completedErr: 'down',
+        state: { day: '2000-01-01', earnedMs: 99 * MIN },
+        config: { failMode: 'closed' },
+      }),
+    );
     expect(d.allowed).toBe(false);
     expect(d.requirement.title).toContain('Connect');
   });
 
-  it('fails open (allows) when configured to', async () => {
-    const d = await taskCompleteGate.evaluate(
-      ctx({ completedErr: 'network down', config: { failMode: 'open' } }),
-    );
+  it('defaults to fail-open when the list is unreachable and nothing is cached', async () => {
+    const d = await taskCompleteGate.evaluate(ctx({ completedErr: 'network down' }));
     expect(d.allowed).toBe(true);
+  });
+
+  it('fails closed (blocks) when configured to and nothing is cached', async () => {
+    const d = await taskCompleteGate.evaluate(
+      ctx({ completedErr: 'network down', config: { failMode: 'closed' } }),
+    );
+    expect(d.allowed).toBe(false);
+    expect(d.requirement.title).toContain('Connect');
   });
 });

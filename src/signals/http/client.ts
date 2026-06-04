@@ -3,6 +3,7 @@
 // — bridge not running, network error, non-JSON, missing/!number field —
 // comes back as `err`, which the gate turns into its fail-open/closed policy.
 
+import { fetchWithTimeout } from '@/shared/fetch';
 import { err, ok, type Result } from '@/shared/result';
 
 // Walk a dot path ("a.b.c") into a parsed JSON value. Returns undefined if
@@ -17,12 +18,14 @@ function dig(value: unknown, path: string): unknown {
 export async function fetchJsonNumber(
   url: string,
   jsonPath: string,
+  timeoutMs: number,
 ): Promise<Result<number, string>> {
   let response: Response;
   try {
-    response = await fetch(url, { headers: { Accept: 'application/json' } });
+    response = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } }, timeoutMs);
   } catch (e) {
-    // Thrown on connection refused (bridge down) or a CORS rejection.
+    // Thrown on connection refused (bridge down), a CORS rejection, or the
+    // request outliving `timeoutMs` (a hung bridge).
     return err(e instanceof Error ? e.message : String(e));
   }
 

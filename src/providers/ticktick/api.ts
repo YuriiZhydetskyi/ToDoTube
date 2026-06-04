@@ -5,10 +5,11 @@
 // narrowed by a small set of type guards. The rest of the file is
 // strictly typed.
 
+import { fetchWithTimeout } from '@/shared/fetch';
 import { log } from '@/shared/logger';
 import { err, ok, type Result } from '@/shared/result';
 
-import { API_BASE } from './config';
+import { API_BASE, API_TIMEOUT_MS } from './config';
 import { forceRefresh, getValidTokens } from './oauth';
 
 export interface TickTickProject {
@@ -110,8 +111,9 @@ async function authedFetch(
 
   let resp: Response;
   try {
-    resp = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    resp = await fetchWithTimeout(`${API_BASE}${path}`, { ...init, headers }, API_TIMEOUT_MS);
   } catch (e) {
+    // Network error, or the request outliving API_TIMEOUT_MS (a hung socket).
     return err(`Network error: ${e instanceof Error ? e.message : String(e)}`);
   }
 

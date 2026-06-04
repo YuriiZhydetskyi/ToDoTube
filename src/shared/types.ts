@@ -103,9 +103,8 @@ export const ANKI_SETUP_URL = 'https://foosoft.net/projects/anki-connect/#config
 // by the activity-budget gate's block screen and the options page, so it
 // lives here. (The bridge endpoint/port/JSON field names stay single-sourced
 // in gates/activity-budget/constants.ts.)
-// TODO: point at the published docs URL once the repo is public.
 export const ACTIVITY_BRIDGE_SETUP_URL =
-  'https://github.com/Yurii-Stefan/ToDoTube/blob/main/bridge/garmin/README.md';
+  'https://github.com/YuriiZhydetskyi/ToDoTube/blob/main/bridge/garmin/README.md';
 
 // Per-gate user configuration and per-gate persisted runtime state. Both
 // are opaque to the core — each gate reads/validates its own shape. Config

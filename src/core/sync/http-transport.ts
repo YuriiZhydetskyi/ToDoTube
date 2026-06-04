@@ -11,10 +11,13 @@
 // (Supabase) or a bearer secret (Cloudflare). No onRemoteChange — the 1-minute
 // gate alarm re-reads, which is how other devices' updates surface.
 
+import { fetchWithTimeout } from '@/shared/fetch';
 import { coerceIntervals, type DeviceDayUsage } from '@/shared/intervals';
 import { log } from '@/shared/logger';
 import type { SyncTransport } from '@/shared/sync-transport';
 import type { SyncSettings } from '@/shared/types';
+
+import { SYNC_FETCH_TIMEOUT_MS } from './constants';
 
 export type HttpFlavor = 'supabase' | 'cloudflare';
 
@@ -56,16 +59,18 @@ export function createHttpTransport(flavor: HttpFlavor, sync: SyncSettings): Syn
     if (!configured) return [];
     const res =
       flavor === 'supabase'
-        ? await fetch(
+        ? await fetchWithTimeout(
             `${url}/rest/v1/usage?select=device_id,day,intervals` +
               `&sync_id=eq.${encodeURIComponent(syncId)}&day=eq.${encodeURIComponent(day)}`,
             {
               headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' },
             },
+            SYNC_FETCH_TIMEOUT_MS,
           )
-        : await fetch(
+        : await fetchWithTimeout(
             `${url}/usage?sync_id=${encodeURIComponent(syncId)}&day=${encodeURIComponent(day)}`,
             { headers: { Authorization: `Bearer ${key}` } },
+            SYNC_FETCH_TIMEOUT_MS,
           );
     if (!res.ok) throw new Error(`sync read failed: ${res.status}`);
     const rows: unknown = await res.json();
@@ -76,34 +81,42 @@ export function createHttpTransport(flavor: HttpFlavor, sync: SyncSettings): Syn
   async function putOwn(rec: DeviceDayUsage): Promise<void> {
     if (!configured) return;
     if (flavor === 'supabase') {
-      const res = await fetch(`${url}/rest/v1/usage`, {
-        method: 'POST',
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates,return=minimal',
+      const res = await fetchWithTimeout(
+        `${url}/rest/v1/usage`,
+        {
+          method: 'POST',
+          headers: {
+            apikey: key,
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates,return=minimal',
+          },
+          body: JSON.stringify({
+            sync_id: syncId,
+            device_id: rec.deviceId,
+            day: rec.day,
+            intervals: rec.intervals,
+          }),
         },
-        body: JSON.stringify({
-          sync_id: syncId,
-          device_id: rec.deviceId,
-          day: rec.day,
-          intervals: rec.intervals,
-        }),
-      });
+        SYNC_FETCH_TIMEOUT_MS,
+      );
       if (!res.ok) throw new Error(`sync write failed: ${res.status}`);
       return;
     }
-    const res = await fetch(`${url}/usage`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        syncId,
-        deviceId: rec.deviceId,
-        day: rec.day,
-        intervals: rec.intervals,
-      }),
-    });
+    const res = await fetchWithTimeout(
+      `${url}/usage`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          syncId,
+          deviceId: rec.deviceId,
+          day: rec.day,
+          intervals: rec.intervals,
+        }),
+      },
+      SYNC_FETCH_TIMEOUT_MS,
+    );
     if (!res.ok) throw new Error(`sync write failed: ${res.status}`);
   }
 

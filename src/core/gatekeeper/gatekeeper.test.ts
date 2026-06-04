@@ -27,10 +27,21 @@ describe('evaluateGate', () => {
     expect(r.gating).toBe(false);
   });
 
-  it('blocks via the active task gate when no provider is connected', async () => {
-    // With no active provider, readCompletedTasksToday errs and the gate
-    // fails closed (its default) → blocked.
+  it('fails open by default when no provider is connected', async () => {
+    // With no active provider, readCompletedTasksToday errs. The task gate's
+    // default fail mode is OPEN (an unreachable cloud task API isn't something
+    // the user can fix), and there's no cached total → allowed.
     await enableTaskGate();
+    const r = await evaluateGate();
+    expect(r.gating).toBe(true);
+    if (r.gating) {
+      expect(r.gateId).toBe(TASK_COMPLETE_GATE_ID);
+      expect(r.decision.allowed).toBe(true);
+    }
+  });
+
+  it('fails closed when configured to and no provider is connected', async () => {
+    await enableTaskGate({ failMode: 'closed' });
     const r = await evaluateGate();
     expect(r.gating).toBe(true);
     if (r.gating) {
