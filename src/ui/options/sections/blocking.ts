@@ -138,11 +138,17 @@ export function renderFocusSection(
 
   const activeGate = gates.find((g) => g.id === gating.activeGateId);
 
+  // Live copy of the active gate's config, updated as its fields change so the
+  // bridge setup block can read the current bridge URL without a re-render
+  // (which would steal input focus).
+  let liveCfg: GateConfig = activeGate ? (gating.gateConfigs[activeGate.id] ?? {}) : {};
+
   // Render the active gate's configurable fields generically from its schema.
   if (activeGate?.configSchema?.length) {
     const cfg = gating.gateConfigs[activeGate.id] ?? {};
     const setCfg = (patch: GateConfig): void => {
-      persist({ gateConfigs: { ...gating.gateConfigs, [activeGate.id]: { ...cfg, ...patch } } });
+      liveCfg = { ...liveCfg, ...patch };
+      persist({ gateConfigs: { ...gating.gateConfigs, [activeGate.id]: liveCfg } });
     };
     for (const field of activeGate.configSchema) {
       container.append(renderConfigField(field, cfg, setCfg));
@@ -156,8 +162,9 @@ export function renderFocusSection(
     container.append(renderAnkiSetup(deps));
   }
   if (deps && activeGate?.id === ACTIVITY_BUDGET_GATE_ID) {
-    const cfg = effectiveConfig(activeGate.configSchema, gating.gateConfigs[activeGate.id] ?? {});
-    container.append(renderBridgeSetup(deps, cfg));
+    container.append(
+      renderBridgeSetup(deps, () => effectiveConfig(activeGate.configSchema, liveCfg)),
+    );
   }
 }
 
@@ -176,7 +183,7 @@ function renderAnkiSetup(deps: FocusSectionDeps): HTMLElement {
         link('Setup guide', deps.ankiSetupUrl),
       ),
     ],
-    originPattern: deps.ankiOrigin,
+    resolveOrigin: () => deps.ankiOrigin,
     labels: {
       granted: 'Localhost access granted',
       notYet: 'Localhost access not granted yet',
@@ -197,11 +204,12 @@ function renderAnkiSetup(deps: FocusSectionDeps): HTMLElement {
 
 // Activity-bridge helper block: request access to the (user-configured) bridge
 // origin, test the connection for the chosen metric, and link to the bridge
-// setup guide. The origin is derived from the bridge URL at click time so a
-// customised URL still gets the right host permission.
-function renderBridgeSetup(deps: FocusSectionDeps, cfg: GateConfig): HTMLElement {
-  const bridgeUrl = typeof cfg.bridgeUrl === 'string' ? cfg.bridgeUrl : '';
-  const metric = typeof cfg.metric === 'string' ? cfg.metric : '';
+// setup guide. The origin and the tested URL/metric are read from the live
+// config at click time (via `getCfg`), so a customised URL still gets the right
+// host permission and gets tested — even right after an edit, with no re-render.
+function renderBridgeSetup(deps: FocusSectionDeps, getCfg: () => GateConfig): HTMLElement {
+  const bridgeUrlOf = (cfg: GateConfig): string =>
+    typeof cfg.bridgeUrl === 'string' ? cfg.bridgeUrl : '';
   return renderSetupBlock({
     title: 'Activity bridge',
     help: [
@@ -212,7 +220,7 @@ function renderBridgeSetup(deps: FocusSectionDeps, cfg: GateConfig): HTMLElement
         link('Setup guide', deps.bridgeSetupUrl),
       ),
     ],
-    originPattern: originPatternFromUrl(bridgeUrl),
+    resolveOrigin: () => originPatternFromUrl(bridgeUrlOf(getCfg())),
     labels: {
       granted: 'Bridge access granted',
       notYet: 'Bridge access not granted yet',
@@ -224,6 +232,9 @@ function renderBridgeSetup(deps: FocusSectionDeps, cfg: GateConfig): HTMLElement
     hasHostPermission: deps.hasHostPermission,
     requestHostPermission: deps.requestHostPermission,
     runTest: async () => {
+      const cfg = getCfg();
+      const bridgeUrl = bridgeUrlOf(cfg);
+      const metric = typeof cfg.metric === 'string' ? cfg.metric : '';
       const r = await sendToBackground({ type: 'HTTP_SIGNAL_TEST', url: bridgeUrl, metric });
       return r.ok
         ? { ok: true, status: `Connected — ${r.value.value} ${r.value.unit} today` }

@@ -22,9 +22,12 @@ export interface SetupBlockSpec {
   // Help nodes appended after the title (callers build their own help span so
   // they can embed a "Setup guide" link).
   help: (Node | string)[];
-  // Host pattern to grant/check, or null when the user hasn't entered a valid
-  // URL yet (then the `missingUrl` status is shown and the buttons no-op).
-  originPattern: string | null;
+  // Resolves the host pattern to grant/check, read LIVE — at render and again
+  // at click time — so editing a URL field without re-rendering (a re-render
+  // would steal input focus) still targets the right origin. Returns null when
+  // the user hasn't entered a valid URL yet (then the `missingUrl` status is
+  // shown and the buttons no-op).
+  resolveOrigin: () => string | null;
   labels: {
     granted: string;
     notYet: string;
@@ -41,10 +44,11 @@ export interface SetupBlockSpec {
 
 export function renderSetupBlock(spec: SetupBlockSpec): HTMLElement {
   const { wrap, setStatus, btnRow } = setupBlock();
-  const { originPattern, labels } = spec;
+  const { labels } = spec;
 
-  if (originPattern) {
-    void spec.hasHostPermission(originPattern).then((granted) => {
+  const initialOrigin = spec.resolveOrigin();
+  if (initialOrigin) {
+    void spec.hasHostPermission(initialOrigin).then((granted) => {
       setStatus(granted ? labels.granted : labels.notYet, granted ? 'ok' : 'warn');
     });
   } else {
@@ -53,9 +57,11 @@ export function renderSetupBlock(spec: SetupBlockSpec): HTMLElement {
 
   const allowBtn = el('button', { text: labels.allowBtn, class: 'tt-btn tt-btn--secondary' });
   allowBtn.addEventListener('click', () => {
-    if (!originPattern) return;
-    // Call straight away — no await before it — to preserve the user gesture.
-    void spec.requestHostPermission(originPattern).then((granted) => {
+    // Resolve the origin synchronously here so a just-edited URL is honoured —
+    // and so no await precedes requestHostPermission, preserving the user gesture.
+    const origin = spec.resolveOrigin();
+    if (!origin) return;
+    void spec.requestHostPermission(origin).then((granted) => {
       setStatus(granted ? labels.granted : labels.denied, granted ? 'ok' : 'warn');
     });
   });

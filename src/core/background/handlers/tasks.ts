@@ -3,12 +3,30 @@
 
 import { evaluateGate } from '@/core/gatekeeper/gatekeeper';
 import { getProviderOrNull } from '@/providers/registry';
+import { log } from '@/shared/logger';
 import { err, ok } from '@/shared/messaging';
 import { getSettings, setProviderState } from '@/shared/storage';
 
 import { broadcastToBlockedTabs } from '../broadcast';
 import { invalidateTaskCache } from '../task-cache';
 import { enrichWithTasks, listTasksForUi, type HandlerMap } from './shared';
+
+// Re-evaluate the gate after a completion and broadcast the (possibly unlocked)
+// decision to blocked tabs. Detached on purpose: the caller only needs the
+// completion itself to have landed (its own ok/err, decided before this runs),
+// and the unlock reaches the tab via the GATE_CHANGED broadcast — so the
+// "complete task" click never waits on the re-evaluation's two TickTick reads
+// (evaluateGate's completed-tasks read + enrichWithTasks). Errors are logged.
+function reevaluateAndBroadcast(): void {
+  void (async () => {
+    try {
+      const gate = await evaluateGate();
+      await broadcastToBlockedTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
+    } catch (e) {
+      log.warn('post-completion re-evaluate/broadcast failed:', e);
+    }
+  })();
+}
 
 export const taskHandlers = {
   LIST_PROJECTS: async (req) => {
@@ -32,9 +50,9 @@ export const taskHandlers = {
     // and block-screen list reflect the completion immediately.
     invalidateTaskCache();
     // Completing a task changes today's earned budget — re-evaluate and
-    // broadcast the (possibly unlocked) decision to all blocked tabs.
-    const gate = await evaluateGate();
-    void broadcastToBlockedTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
+    // broadcast the (possibly unlocked) decision to all blocked tabs. Detached
+    // so the click doesn't wait on the re-evaluation's network reads.
+    reevaluateAndBroadcast();
     return ok(null);
   },
 
@@ -46,8 +64,7 @@ export const taskHandlers = {
     const r = await provider.completeTask(req.projectId, req.taskId);
     if (!r.ok) return err(r.error);
     invalidateTaskCache();
-    const gate = await evaluateGate();
-    void broadcastToBlockedTabs({ type: 'GATE_CHANGED', result: await enrichWithTasks(gate) });
+    reevaluateAndBroadcast();
     return ok(null);
   },
 

@@ -102,23 +102,26 @@ export function renderSyncSection(
 
   // Backend connection fields, rendered generically from the provider schema.
   const cfg = sync.config[sync.mode] ?? {};
+  // Live copy of the active mode's config, updated as fields change so the
+  // setup block can read the current backend URL without a re-render.
+  let liveCfg: GateConfig = cfg;
   const setCfg = (patch: GateConfig): void => {
-    persist({ config: { ...sync.config, [sync.mode]: { ...cfg, ...patch } } });
+    liveCfg = { ...liveCfg, ...patch };
+    persist({ config: { ...sync.config, [sync.mode]: liveCfg } });
   };
   for (const field of active.configSchema) {
     container.append(renderConfigField(field, cfg, setCfg));
   }
 
-  if (deps) container.append(renderSyncSetup(deps, sync));
+  if (deps) container.append(renderSyncSetup(deps, () => liveCfg));
 }
 
 // Backend permission + connection-test block for the HTTP sync modes. The host
 // origin is derived from the configured URL at click time (so a user-supplied
-// endpoint still gets the right optional host permission), mirroring the
-// activity-bridge setup block.
-function renderSyncSetup(deps: SyncSectionDeps, sync: SyncSettings): HTMLElement {
-  const cfg = sync.config[sync.mode] ?? {};
-  const url = typeof cfg.url === 'string' ? cfg.url : '';
+// endpoint still gets the right optional host permission, even right after an
+// edit), mirroring the activity-bridge setup block. `getCfg` reads the live
+// config so the origin tracks edits without a re-render.
+function renderSyncSetup(deps: SyncSectionDeps, getCfg: () => GateConfig): HTMLElement {
   return renderSetupBlock({
     title: 'Backend connection',
     help: [
@@ -128,7 +131,11 @@ function renderSyncSetup(deps: SyncSectionDeps, sync: SyncSettings): HTMLElement
         'Grant access to your backend URL, then test the connection. See docs/SYNC.md.',
       ),
     ],
-    originPattern: originPatternFromUrl(url),
+    resolveOrigin: () => {
+      const cfg = getCfg();
+      const url = typeof cfg.url === 'string' ? cfg.url : '';
+      return originPatternFromUrl(url);
+    },
     labels: {
       granted: 'Access granted',
       notYet: 'Access not granted yet',

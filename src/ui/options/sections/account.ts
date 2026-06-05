@@ -3,7 +3,6 @@
 
 import { sendToBackground } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
-import { getProviderState, setProviderState } from '@/shared/storage';
 import type { ProviderId, Settings } from '@/shared/types';
 
 import { el, pill, row } from '../dom';
@@ -60,8 +59,10 @@ export async function renderAccountSection(
   }
   const projects = projectsRes.value;
 
-  const providerState = await getProviderState(PROVIDER_ID);
-  const activeListId = providerState.activeListId ?? provider.defaultListId;
+  // Ask background (the single source of truth) for the active list rather than
+  // reading provider state from storage in this ui-layer file.
+  const stateRes = await sendToBackground({ type: 'GET_STATE' });
+  const activeListId = (stateRes.ok ? stateRes.value.activeListId : null) ?? provider.defaultListId;
 
   const select = el('select', { class: 'tt-select' }) as HTMLSelectElement;
   for (const p of projects) {
@@ -70,7 +71,13 @@ export async function renderAccountSection(
     select.append(opt);
   }
   select.addEventListener('change', () => {
-    void setProviderState(PROVIDER_ID, { activeListId: select.value });
+    // Route through the message bus so background owns the write (it persists
+    // provider state and broadcasts LIST_CHANGED); ui never writes it directly.
+    void sendToBackground({
+      type: 'SET_ACTIVE_LIST',
+      providerId: PROVIDER_ID,
+      listId: select.value,
+    });
   });
   container.append(row('Active list', select, 'What appears in the right rail.'));
 }

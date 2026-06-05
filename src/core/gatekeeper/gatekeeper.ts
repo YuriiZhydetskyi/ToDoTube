@@ -57,7 +57,17 @@ async function buildContext(gateId: GateId, config: GateConfig, now: number): Pr
         return err(e instanceof Error ? e.message : String(e));
       }
     },
-    readCompletedTasksToday: () => readCompletedTasksToday(now),
+    readCompletedTasksToday: async () => {
+      try {
+        return await readCompletedTasksToday(now);
+      } catch (e) {
+        // Mirror readSignal: a throw (a storage/provider blowup, not a returned
+        // err) becomes an err so the task gate applies its own cache-fallback /
+        // fail-mode policy, instead of bubbling to evaluateGate's catch below
+        // (which always fails fully open and skips the gate's logic entirely).
+        return err(e instanceof Error ? e.message : String(e));
+      }
+    },
     state: await getGateState(gateId),
     config,
   };

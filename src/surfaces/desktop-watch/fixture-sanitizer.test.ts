@@ -100,4 +100,95 @@ describe('sanitizeFixtureRoot', () => {
 
     expect(el.querySelector('[data-tt-anchor="rightRail"]')).not.toBeNull();
   });
+
+  // --- Privacy guarantees ----------------------------------------------------
+  // These pin the named PII/auth-stripping contract: cookies/tokens, account
+  // names, watch history, and ytcfg/INNERTUBE config must never survive into a
+  // committed fixture. A regression that widens what leaks fails here.
+
+  it('blanks a token-bearing data-* attribute without dropping the element', () => {
+    const secret = 'SECRET_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9';
+    const el = root(`<wrapper-el><auth-el data-session-token="${secret}"></auth-el></wrapper-el>`);
+    sanitizeFixtureRoot(el);
+
+    const authEl = el.querySelector('auth-el')!;
+    // The element (structural signal) survives...
+    expect(authEl).not.toBeNull();
+    // ...but the token value is gone. The implementation blanks data-* to '';
+    // accept either blanked or removed, but the secret must not remain.
+    expect(authEl.getAttribute('data-session-token') ?? '').toBe('');
+    expect(el.outerHTML).not.toContain('SECRET');
+    expect(el.outerHTML).not.toContain(secret);
+  });
+
+  it('removes inline scripts carrying ytcfg / INNERTUBE config', () => {
+    const el = root(
+      '<wrapper-el>' +
+        '<config-el>' +
+        '<script>ytcfg.set({"INNERTUBE_API_KEY":"AIzaSECRET","VISITOR_DATA":"CgtSECRET"});</script>' +
+        '</config-el>' +
+        '</wrapper-el>',
+    );
+    sanitizeFixtureRoot(el);
+
+    expect(el.querySelector('script')).toBeNull();
+    const html = el.outerHTML;
+    expect(html).not.toContain('ytcfg');
+    expect(html).not.toContain('INNERTUBE_API_KEY');
+    expect(html).not.toContain('AIzaSECRET');
+    expect(html).not.toContain('VISITOR_DATA');
+    expect(html).not.toContain('CgtSECRET');
+  });
+
+  it('drops href/src carrying account and channel identifiers', () => {
+    const el = root(
+      '<wrapper-el>' +
+        '<a href="/channel/UCsecret?account=me@example.com">channel</a>' +
+        '<media-el src="https://i.ytimg.com/user/SECRETHANDLE/avatar.jpg"></media-el>' +
+        '</wrapper-el>',
+    );
+    sanitizeFixtureRoot(el);
+
+    const a = el.querySelector('a')!;
+    expect(a.hasAttribute('href')).toBe(false);
+    const media = el.querySelector('media-el')!;
+    expect(media.hasAttribute('src')).toBe(false);
+
+    const html = el.outerHTML;
+    expect(html).not.toContain('UCsecret');
+    expect(html).not.toContain('me@example.com');
+    expect(html).not.toContain('SECRETHANDLE');
+  });
+
+  it('neutralizes a text node holding an account display name', () => {
+    const el = root(
+      '<wrapper-el><account-el>Signed in as Jane Q. Maintainer</account-el></wrapper-el>',
+    );
+    sanitizeFixtureRoot(el);
+
+    const account = el.querySelector('account-el')!;
+    // The node survives (layouts can collapse when empty) but the name is gone.
+    expect(account).not.toBeNull();
+    expect(account.textContent).not.toContain('Jane');
+    expect(account.textContent).not.toContain('Maintainer');
+    expect(el.outerHTML).not.toContain('Jane');
+  });
+
+  it('keeps data-tt-* markers while blanking sibling personal data-* values', () => {
+    const el = root(
+      '<wrapper-el data-tt-anchor="rightRail" data-tt-strategy="2" ' +
+        'data-watch-history="watched: a,b,c" data-account="me@example.com"></wrapper-el>',
+    );
+    sanitizeFixtureRoot(el);
+
+    // Ground-truth anchors are preserved verbatim...
+    expect(el.getAttribute('data-tt-anchor')).toBe('rightRail');
+    expect(el.getAttribute('data-tt-strategy')).toBe('2');
+    // ...while personal data-* hooks keep presence but lose their value.
+    expect(el.getAttribute('data-watch-history')).toBe('');
+    expect(el.getAttribute('data-account')).toBe('');
+    const html = el.outerHTML;
+    expect(html).not.toContain('watched:');
+    expect(html).not.toContain('me@example.com');
+  });
 });

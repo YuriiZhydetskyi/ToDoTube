@@ -17,7 +17,6 @@ import { browser } from 'wxt/browser';
 import { formatBudgetClock } from '@/shared/budget';
 import { sendToBackground } from '@/shared/messaging';
 import { getProviderDescriptor } from '@/shared/providers';
-import { getProviderState, getSettings } from '@/shared/storage';
 import { el } from '@/ui/options/dom';
 
 export async function startPopup(root: HTMLElement): Promise<void> {
@@ -91,7 +90,7 @@ export async function startPopup(root: HTMLElement): Promise<void> {
       statusSecondary.textContent = r.error;
       return;
     }
-    const { settings, authenticated, budgetMsLeft } = r.value;
+    const { settings, authenticated, budgetMsLeft, activeListId } = r.value;
     toggle.checked = settings.enabled;
     // Budget is independent of the provider connection (e.g. the Anki/activity
     // gates need no provider), so render it before the not-connected return.
@@ -102,9 +101,10 @@ export async function startPopup(root: HTMLElement): Promise<void> {
       statusSecondary.textContent = 'Open settings to connect.';
       return;
     }
-    const providerState = await getProviderState(settings.activeProviderId);
+    // activeListId comes from the GET_STATE snapshot — background stays the one
+    // source of truth; the popup never reads provider state from storage itself.
     const provider = getProviderDescriptor(settings.activeProviderId);
-    const list = providerState.activeListId ?? provider.defaultListId;
+    const list = activeListId ?? provider.defaultListId;
     const listLabel = list === provider.defaultListId ? 'Today' : list;
     statusPrimary.textContent = provider.displayName;
     statusSecondary.textContent = `List: ${listLabel}`;
@@ -114,15 +114,11 @@ export async function startPopup(root: HTMLElement): Promise<void> {
     void sendToBackground({ type: 'SET_ENABLED', enabled: toggle.checked });
   });
 
-  // Initial render + react to changes while the popup is open.
+  // Initial render + react to changes while the popup is open. We can't use
+  // shared/storage's onSettingsChange across the popup boundary the same way as
+  // content scripts, but storage events fire here too — listen directly.
   void refresh();
-  const settings = await getSettings();
-  // We can't subscribe via shared/storage's onSettingsChange across the
-  // popup boundary the same way as content scripts, but storage events
-  // fire here too — listen directly.
   browser.storage.onChanged.addListener(() => {
     void refresh();
   });
-  // Suppress unused-var warning while keeping the snapshot import.
-  void settings;
 }
