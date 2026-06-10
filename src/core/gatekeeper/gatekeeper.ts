@@ -10,19 +10,26 @@ import { browser } from 'wxt/browser';
 
 import { getGateOrNull } from '@/gates/registry';
 import type { GateContext } from '@/gates/types';
+import { getProviderOrNull } from '@/providers/registry';
 import { getSignalOrNull } from '@/signals/registry';
 import { log } from '@/shared/logger';
-import { err } from '@/shared/result';
+import { err, type Result } from '@/shared/result';
 import { getGateState, getSettings, setGateState } from '@/shared/storage';
 import {
   DEFAULT_GATING,
   type GateConfig,
   type GateEvalResult,
   type GateId,
-  type ProviderId,
+  type Task,
 } from '@/shared/types';
 
-import { getYoutubeUsageTodayMs } from './usage';
+import { cachedRead } from '@/core/background/task-cache';
+
+import { getSpentTodayMs, localDayKey } from './usage';
+
+// Completed-tasks reads are cached this long to stay well under TickTick's
+// 100-req/min limit; completing a task invalidates the cache for immediacy.
+const COMPLETED_TTL_MS = 60_000;
 
 async function loadActive(): Promise<{ gateId: GateId; config: GateConfig } | null> {
   const settings = await getSettings();
@@ -37,7 +44,7 @@ async function loadActive(): Promise<{ gateId: GateId; config: GateConfig } | nu
 async function buildContext(gateId: GateId, config: GateConfig, now: number): Promise<GateContext> {
   return {
     now,
-    youtubeUsageTodayMs: await getYoutubeUsageTodayMs(now),
+    spentTodayMs: await getSpentTodayMs(now),
     readSignal: async (id, signalConfig) => {
       const signal = getSignalOrNull(id);
       if (!signal) return err(`Unknown signal: ${id}`);
@@ -50,9 +57,42 @@ async function buildContext(gateId: GateId, config: GateConfig, now: number): Pr
         return err(e instanceof Error ? e.message : String(e));
       }
     },
+    readCompletedTasksToday: async () => {
+      try {
+        return await readCompletedTasksToday(now);
+      } catch (e) {
+        // Mirror readSignal: a throw (a storage/provider blowup, not a returned
+        // err) becomes an err so the task gate applies its own cache-fallback /
+        // fail-mode policy, instead of bubbling to evaluateGate's catch below
+        // (which always fails fully open and skips the gate's logic entirely).
+        return err(e instanceof Error ? e.message : String(e));
+      }
+    },
     state: await getGateState(gateId),
     config,
   };
+}
+
+// Bridge the active provider's "completed today" query into the gate
+// context. Lazy (a thunk) so only gates that need it pay the network cost.
+// "Today" uses the same local-day boundary as the screen-time tracker.
+async function readCompletedTasksToday(now: number): Promise<Result<Task[], string>> {
+  const settings = await getSettings();
+  if (!settings.activeProviderId) return err('No active provider');
+  const provider = getProviderOrNull(settings.activeProviderId);
+  if (!provider) return err(`Unknown provider: ${settings.activeProviderId}`);
+  if (!provider.listCompletedTasks) return err('Provider cannot list completed tasks');
+
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(now);
+  dayEnd.setHours(23, 59, 59, 999);
+  const listCompleted = provider.listCompletedTasks;
+  return cachedRead(
+    `completed:${settings.activeProviderId}:${localDayKey(now)}`,
+    COMPLETED_TTL_MS,
+    () => listCompleted({ since: dayStart.getTime(), until: dayEnd.getTime() }),
+  );
 }
 
 /**
@@ -76,31 +116,6 @@ export async function evaluateGate(now: number = Date.now()): Promise<GateEvalRe
     log.warn('gate evaluate failed; failing open:', e);
     return { gating: false };
   }
-}
-
-/**
- * Forward a "task completed" event to the active gate (if it handles
- * events), persist any state change, then re-evaluate so the returned
- * decision reflects the new state. Safe to call regardless of which gate
- * is active.
- */
-export async function notifyTaskCompleted(
-  providerId: ProviderId,
-  taskId: string,
-  now: number = Date.now(),
-): Promise<GateEvalResult> {
-  const active = await loadActive();
-  const gate = active && getGateOrNull(active.gateId);
-  if (active && gate?.onEvent) {
-    try {
-      const ctx = await buildContext(active.gateId, active.config, now);
-      const partial = await gate.onEvent({ type: 'task-completed', providerId, taskId }, ctx);
-      if (partial?.nextState) await setGateState(active.gateId, partial.nextState);
-    } catch (e) {
-      log.warn('gate onEvent failed:', e);
-    }
-  }
-  return evaluateGate(now);
 }
 
 // --- Periodic re-evaluation alarm ----------------------------------------

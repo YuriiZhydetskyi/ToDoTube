@@ -1,12 +1,13 @@
 // Minimal AnkiConnect transport. POSTs {action, version, params} to the
 // local AnkiConnect server and unwraps its {result, error} envelope into a
 // Result. Any failure — Anki not running, CORS origin not allowlisted,
-// network error, or an AnkiConnect-reported error — comes back as `err`,
-// which the gate turns into its fail-open / fail-closed behavior.
+// network error, a timeout, or an AnkiConnect-reported error — comes back as
+// `err`, which the gate turns into its fail-open / fail-closed behavior.
 
+import { fetchWithTimeout } from '@/shared/fetch';
 import { err, ok, type Result } from '@/shared/result';
 
-import { ANKI_CONNECT_URL, ANKI_CONNECT_VERSION } from './constants';
+import { ANKI_CONNECT_URL, ANKI_CONNECT_VERSION, ANKI_INVOKE_TIMEOUT_MS } from './constants';
 
 interface AnkiEnvelope<T> {
   result: T;
@@ -19,13 +20,18 @@ export async function ankiInvoke<T>(
 ): Promise<Result<T, string>> {
   let response: Response;
   try {
-    response = await fetch(ANKI_CONNECT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, version: ANKI_CONNECT_VERSION, params }),
-    });
+    response = await fetchWithTimeout(
+      ANKI_CONNECT_URL,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, version: ANKI_CONNECT_VERSION, params }),
+      },
+      ANKI_INVOKE_TIMEOUT_MS,
+    );
   } catch (e) {
-    // Thrown on connection refused (Anki closed) or a CORS rejection.
+    // Thrown on connection refused (Anki closed), a CORS rejection, or the
+    // timeout firing on a hung instance (a TimeoutError DOMException).
     return err(e instanceof Error ? e.message : String(e));
   }
 

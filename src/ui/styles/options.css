@@ -79,6 +79,25 @@
   .tt-card__title {
     @apply mt-0 mb-4 text-base font-semibold text-tt-fg;
   }
+  .tt-card__lede {
+    @apply -mt-2 mb-4 text-sm text-tt-fg-muted;
+  }
+  /* Tab bar splitting the page into "To-Do" and "Blocking". */
+  .tt-tabs {
+    @apply mb-8 flex gap-1 border-b border-tt-border;
+  }
+  .tt-tab {
+    @apply -mb-px cursor-pointer border-b-2 border-transparent bg-transparent
+           px-4 py-2.5 text-base font-medium text-tt-fg-muted transition-colors duration-150
+           hover:text-tt-fg
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
+  .tt-tab--active {
+    @apply border-tt-accent text-tt-fg;
+  }
+  .tt-tabpanel[hidden] {
+    display: none;
+  }
   .tt-row {
     @apply flex items-center justify-between gap-4 border-b border-tt-border py-3
            last:border-b-0 last:pb-0 first:pt-0;

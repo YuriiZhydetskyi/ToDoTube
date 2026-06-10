@@ -1,0 +1,55 @@
+<!--
+  Baseline (hand-authored) desktop watch-page fixture.
+
+  This mirrors YouTube's real watch-page nesting closely enough to drive the
+  full resolver (selectors + heuristics) end-to-end through resolve(), but it
+  carries no captured/personal data. Replace or supplement it with real
+  sanitized captures via `pnpm fixtures:capture`.
+
+  Ground truth is authored with data-tt-anchor / data-tt-strategy. The
+  regression test asserts resolve() lands on exactly the marked element and
+  does not fall back to a worse strategy than recorded here.
+-->
+<ytd-watch-flexy class="style-scope ytd-page-manager" data-tt-anchor="pageRoot" data-tt-strategy="0">
+  <div id="columns" class="style-scope ytd-watch-flexy">
+    <div id="primary" class="style-scope ytd-watch-flexy">
+      <div id="player" class="style-scope ytd-watch-flexy">
+        <div id="movie_player" class="html5-video-player">
+          <div class="html5-video-container">
+            <video
+              class="video-stream html5-main-video"
+              data-tt-anchor="videoPlayer"
+              data-tt-strategy="0"
+            ></video>
+          </div>
+          <div
+            class="html5-endscreen ytp-endscreen-content"
+            data-tt-anchor="endscreenContainer"
+            data-tt-strategy="0"
+          >
+            <div class="ytp-ce-element ytp-ce-video"></div>
+            <div class="ytp-ce-element ytp-ce-video"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="secondary" class="style-scope ytd-watch-flexy">
+      <div id="secondary-inner" class="style-scope ytd-watch-flexy">
+        <ytd-watch-next-secondary-results-renderer
+          class="style-scope ytd-watch-flexy"
+          data-tt-anchor="rightRail"
+          data-tt-strategy="0"
+        >
+          <div id="related" class="style-scope ytd-watch-next-secondary-results-renderer">
+            <ytd-compact-video-renderer class="style-scope">·</ytd-compact-video-renderer>
+            <ytd-compact-video-renderer class="style-scope">·</ytd-compact-video-renderer>
+            <ytd-compact-video-renderer class="style-scope">·</ytd-compact-video-renderer>
+            <ytd-compact-video-renderer class="style-scope">·</ytd-compact-video-renderer>
+            <ytd-compact-video-renderer class="style-scope">·</ytd-compact-video-renderer>
+            <ytd-compact-video-renderer class="style-scope">·</ytd-compact-video-renderer>
+          </div>
+        </ytd-watch-next-secondary-results-renderer>
+      </div>
+    </div>
+  </div>
+</ytd-watch-flexy>

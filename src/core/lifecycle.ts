@@ -12,10 +12,19 @@
 
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
+import { isActiveTab } from '@/shared/active-tab';
+import { formatBudgetClock, remainingBudgetMs } from '@/shared/budget';
 import { log, setVerbose } from '@/shared/logger';
-import { onBroadcast, sendToBackground } from '@/shared/messaging';
+import { onBroadcast, sendToBackground, type Broadcast } from '@/shared/messaging';
 import { DEFAULT_PROVIDER_ID, getProviderDescriptor } from '@/shared/providers';
-import type { ClickBehavior, ListId, Project, ProviderId, Task } from '@/shared/types';
+import type {
+  ClickBehavior,
+  GateEvalResult,
+  ListId,
+  Project,
+  ProviderId,
+  Task,
+} from '@/shared/types';
 import {
   mountEndscreen,
   mountRightRail,
@@ -55,6 +64,10 @@ interface State {
   // Projects available to the in-panel list picker. Empty until the
   // first successful LIST_PROJECTS call after authentication.
   projects: Project[];
+  // YouTube milliseconds left today per the active budget gate; null when
+  // gating is off or the gate isn't budget-style (then no banner is shown).
+  // Decremented locally each second and re-synced on GATE_CHANGED.
+  budgetMsLeft: number | null;
   ui: UIState;
 
   rightRailMount: MountHandle | null;
@@ -77,6 +90,7 @@ export function start(ctx: ContentScriptContext): void {
     listId: getProviderDescriptor(DEFAULT_PROVIDER).defaultListId,
     tasks: [],
     projects: [],
+    budgetMsLeft: null,
     ui: { kind: 'loading' },
     rightRailMount: null,
     endscreenMount: null,
@@ -86,40 +100,18 @@ export function start(ctx: ContentScriptContext): void {
 
   void initState(state);
 
+  // Live budget countdown: tick the on-screen clock down each second while
+  // the tab is actually consuming budget. Cheap — updates one text node.
+  ctx.setInterval(() => {
+    if (state.ctx.isValid) tickBudget(state);
+  }, 1000);
+
   ctx.addEventListener(window, 'wxt:locationchange', () => {
     log.debug('locationchange:', window.location.href);
     evaluate(state);
   });
 
-  const offBroadcast = onBroadcast((msg) => {
-    if (msg.type === 'SETTINGS_CHANGED') {
-      setVerbose(msg.settings.verboseLogging);
-      state.enabled = msg.settings.enabled;
-      state.replaceRightRail = msg.settings.replaceRightRail;
-      state.replaceEndscreen = msg.settings.replaceEndscreen;
-      state.clickBehavior = msg.settings.clickBehavior;
-      if (msg.settings.activeProviderId) state.providerId = msg.settings.activeProviderId;
-      evaluate(state);
-    } else if (msg.type === 'LIST_CHANGED') {
-      if (msg.providerId === state.providerId && msg.listId !== state.listId) {
-        state.listId = msg.listId;
-        void fetchTasks(state);
-      }
-    } else if (msg.type === 'TASKS_UPDATED') {
-      if (msg.providerId === state.providerId && msg.listId === state.listId) {
-        state.tasks = msg.tasks;
-        setUi(
-          state,
-          msg.tasks.length === 0 ? { kind: 'empty' } : { kind: 'list', tasks: msg.tasks },
-        );
-      }
-    } else if (msg.type === 'AUTH_REQUIRED') {
-      if (msg.providerId === state.providerId) {
-        state.authenticated = false;
-        setUi(state, { kind: 'disconnected' });
-      }
-    }
-  });
+  const offBroadcast = onBroadcast((msg) => broadcastHandlers[msg.type](state, msg as never));
 
   ctx.onInvalidated(() => {
     log.debug('script invalidated; tearing down');
@@ -156,7 +148,93 @@ async function initState(state: State): Promise<void> {
   if (settings.activeProviderId) state.providerId = settings.activeProviderId;
   if (activeListId) state.listId = activeListId;
   evaluate(state);
+  void fetchGate(state);
   if (authenticated) void loadProjects(state);
+}
+
+// Pull the current gate decision so the panel can show the remaining
+// YouTube budget. Cheap (the background already has the decision); the
+// 1-minute GATE_CHANGED broadcast keeps it fresh thereafter.
+async function fetchGate(state: State): Promise<void> {
+  const r = await sendToBackground({ type: 'GATE_EVAL' });
+  if (!state.ctx.isValid || !r.ok) return;
+  applyGate(state, r.value);
+}
+
+// One handler per broadcast type, dispatched by `broadcastHandlers` below.
+// Each mutates `state` for its message and re-renders/fetches as needed; the
+// per-type guards (provider/list match) live inside the relevant handler.
+function applySettingsChanged(
+  state: State,
+  msg: Extract<Broadcast, { type: 'SETTINGS_CHANGED' }>,
+): void {
+  setVerbose(msg.settings.verboseLogging);
+  state.enabled = msg.settings.enabled;
+  state.replaceRightRail = msg.settings.replaceRightRail;
+  state.replaceEndscreen = msg.settings.replaceEndscreen;
+  state.clickBehavior = msg.settings.clickBehavior;
+  if (msg.settings.activeProviderId) state.providerId = msg.settings.activeProviderId;
+  evaluate(state);
+}
+
+function applyListChanged(state: State, msg: Extract<Broadcast, { type: 'LIST_CHANGED' }>): void {
+  if (msg.providerId === state.providerId && msg.listId !== state.listId) {
+    state.listId = msg.listId;
+    void fetchTasks(state);
+  }
+}
+
+function applyTasksUpdated(state: State, msg: Extract<Broadcast, { type: 'TASKS_UPDATED' }>): void {
+  if (msg.providerId === state.providerId && msg.listId === state.listId) {
+    state.tasks = msg.tasks;
+    setUi(state, msg.tasks.length === 0 ? { kind: 'empty' } : { kind: 'list', tasks: msg.tasks });
+  }
+}
+
+function applyAuthRequired(state: State, msg: Extract<Broadcast, { type: 'AUTH_REQUIRED' }>): void {
+  if (msg.providerId === state.providerId) {
+    state.authenticated = false;
+    setUi(state, { kind: 'disconnected' });
+  }
+}
+
+// Dispatch table for background broadcasts. The mapped type makes a missing or
+// extra key a compile error, so a new Broadcast variant must be handled here.
+const broadcastHandlers: {
+  [T in Broadcast['type']]: (state: State, msg: Extract<Broadcast, { type: T }>) => void;
+} = {
+  SETTINGS_CHANGED: applySettingsChanged,
+  LIST_CHANGED: applyListChanged,
+  TASKS_UPDATED: applyTasksUpdated,
+  AUTH_REQUIRED: applyAuthRequired,
+  GATE_CHANGED: (state, msg) => applyGate(state, msg.result),
+};
+
+function applyGate(state: State, result: GateEvalResult): void {
+  const next = remainingBudgetMs(result);
+  // Re-sync to the authoritative figure and re-render the banner. A full
+  // re-render here is fine — GATE_CHANGED fires ~once a minute, not per second.
+  if (next === state.budgetMsLeft) return;
+  state.budgetMsLeft = next;
+  setUi(state, state.ui);
+}
+
+// Per-second countdown. Gated on the same `isActiveTab()` condition as the
+// background's watch-time accrual so the on-screen clock matches the budget
+// actually being spent; updates only the value node so task rows aren't rebuilt
+// every second.
+function tickBudget(state: State): void {
+  // No panel mounted (e.g. off the watch page) → nothing to display, so don't
+  // mutate the countdown; GATE_CHANGED will resync it when a panel returns.
+  if (!state.rightRailMount && !state.endscreenMount) return;
+  if (state.budgetMsLeft === null || state.budgetMsLeft <= 0) return;
+  if (!isActiveTab()) return;
+  state.budgetMsLeft = Math.max(0, state.budgetMsLeft - 1000);
+  const text = formatBudgetClock(state.budgetMsLeft);
+  for (const mount of [state.rightRailMount, state.endscreenMount]) {
+    const node = mount?.root.querySelector('.tt-panel__budget-value');
+    if (node) node.textContent = text;
+  }
 }
 
 async function loadProjects(state: State): Promise<void> {
@@ -347,6 +425,7 @@ function buildHeader(state: State): PanelHeader | undefined {
     providerName: provider.displayName,
     webAppUrl: provider.webAppUrl,
     smartListCaption: provider.smartListCaption,
+    budgetMsLeft: state.budgetMsLeft ?? undefined,
     onListChange: (listId) => void onListPicked(state, listId),
     onRefresh: () => {
       void loadProjects(state);

@@ -74,6 +74,18 @@
   .tt-popup__row-label {
     @apply text-tt-fg;
   }
+  /* "screen-time left today" countdown — the universal budget readout for
+   * sites without an in-page timer. Hidden when no budget gate is active. */
+  .tt-popup__budget {
+    @apply flex flex-col items-center gap-0.5 rounded-tt-sm border border-tt-border
+           bg-tt-bg px-3 py-2.5;
+  }
+  .tt-popup__budget-value {
+    @apply text-2xl font-semibold tabular-nums tracking-tight text-tt-fg;
+  }
+  .tt-popup__budget-label {
+    @apply text-xs text-tt-fg-muted;
+  }
   .tt-popup__status {
     @apply flex min-h-[1.5em] flex-col gap-0.5 text-xs;
   }

@@ -14,7 +14,11 @@ import { ANKI_ACTIONS } from './constants';
 import { startOfLocalDayMs, sumReviewDurationMs } from './reviews';
 
 const CACHE_MS = 20_000;
-let cache: { value: SignalValue; at: number } | null = null;
+// `dayStart` scopes the cache to the local day it was computed for: a value
+// summed since yesterday's midnight must not be reused after the day rolls
+// over, or it would carry yesterday's earned time into the new day for up to
+// CACHE_MS (e.g. a read at 23:59:55 served again at 00:00:05).
+let cache: { value: SignalValue; at: number; dayStart: number } | null = null;
 
 // Exported (uncached) so tests can exercise the deck fan-out without the
 // module-level cache below.
@@ -39,13 +43,17 @@ export const ankiStudyTodaySignal: Signal = {
 
   async read(): Promise<Result<SignalValue, string>> {
     const now = Date.now();
-    if (cache && now - cache.at < CACHE_MS) return ok(cache.value);
+    const dayStart = startOfLocalDayMs(now);
+    // Reuse the cache only within the TTL AND the same local day.
+    if (cache && cache.dayStart === dayStart && now - cache.at < CACHE_MS) {
+      return ok(cache.value);
+    }
 
     const studied = await readStudyTodayMs(now);
     if (!studied.ok) return err(studied.error);
 
     const value: SignalValue = { kind: 'durationMs', value: studied.value, asOf: now };
-    cache = { value, at: now };
+    cache = { value, at: now, dayStart };
     return ok(value);
   },
 

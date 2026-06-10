@@ -1,16 +1,27 @@
 // Vanilla-DOM block screen. Gate-agnostic: it renders a RequirementView
-// (title, optional detail, optional progress meter, optional CTA). The CSS
-// is imported as a string via Vite's `?inline` and re-exported so the
-// surface layer can inject it into the overlay's shadow root — mirroring
-// how panel.ts hands `panelCss` to the watch adapter.
+// (title, optional detail, optional progress meter, optional CTA, optional
+// task list). The CSS is imported as a string via Vite's `?inline` and
+// re-exported so the surface layer can inject it into the overlay's shadow
+// root — mirroring how panel.ts hands `panelCss` to the watch adapter.
 
+import { parseBudgetAnnotation } from '@/shared/budget-annotation';
 import blockScreenCssText from '@/ui/styles/block-screen.css?inline';
 
 import type { RequirementView } from '@/shared/types';
 
 export const blockScreenCss: string = blockScreenCssText;
 
-export function renderBlockScreen(root: HTMLElement, requirement: RequirementView): void {
+export interface BlockScreenCallbacks {
+  // Completes a task from the block-screen list. Resolves true on success,
+  // false on failure so the row can re-enable itself and signal the error.
+  onCompleteTask?: (projectId: string, taskId: string) => Promise<boolean>;
+}
+
+export function renderBlockScreen(
+  root: HTMLElement,
+  requirement: RequirementView,
+  callbacks?: BlockScreenCallbacks,
+): void {
   root.className = 'tt-block';
   root.replaceChildren();
 
@@ -30,12 +41,15 @@ export function renderBlockScreen(root: HTMLElement, requirement: RequirementVie
     card.appendChild(detail);
   }
 
+  // Sections render independently — a task list never suppresses a CTA.
   if (requirement.progress) {
     card.appendChild(renderProgress(requirement.progress));
   }
-
   if (requirement.action) {
     card.appendChild(renderAction(requirement.action));
+  }
+  if (requirement.tasks !== undefined) {
+    card.appendChild(renderTaskList(requirement.tasks, callbacks?.onCompleteTask));
   }
 
   root.appendChild(card);
@@ -70,6 +84,68 @@ function renderAction(action: NonNullable<RequirementView['action']>): HTMLEleme
   const button = el('button', 'tt-block__action');
   button.textContent = action.label;
   return button;
+}
+
+function renderTaskList(
+  tasks: NonNullable<RequirementView['tasks']>,
+  onComplete?: (projectId: string, taskId: string) => Promise<boolean>,
+): HTMLElement {
+  const wrap = el('div', 'tt-block__tasks');
+
+  if (tasks.length === 0) {
+    const empty = el('p', 'tt-block__tasks-empty');
+    empty.textContent = 'No open tasks here — complete a task to earn viewing time.';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  const list = el('ul', 'tt-block__task-list');
+  for (const task of tasks) {
+    list.appendChild(renderTaskRow(task, onComplete));
+  }
+  wrap.appendChild(list);
+  return wrap;
+}
+
+function renderTaskRow(
+  task: NonNullable<RequirementView['tasks']>[number],
+  onComplete?: (projectId: string, taskId: string) => Promise<boolean>,
+): HTMLElement {
+  const item = el('li', 'tt-block__task');
+  const { minutes, cleanTitle } = parseBudgetAnnotation(task.title);
+
+  const btn = el('button', 'tt-block__task-btn') as HTMLButtonElement;
+  btn.type = 'button';
+  btn.setAttribute('aria-label', `Complete: ${cleanTitle}`);
+  btn.appendChild(el('span', 'tt-block__task-check'));
+
+  btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add('tt-block__task-btn--loading');
+    item.classList.remove('tt-block__task--error');
+    // On success the GATE_CHANGED broadcast re-renders this list (the task
+    // drops off). On failure we re-enable so the user can retry.
+    void Promise.resolve(onComplete?.(task.projectId, task.id)).then((ok) => {
+      if (ok === false) {
+        btn.disabled = false;
+        btn.classList.remove('tt-block__task-btn--loading');
+        item.classList.add('tt-block__task--error');
+      }
+    });
+  });
+
+  const label = el('span', 'tt-block__task-label');
+  label.textContent = cleanTitle;
+
+  item.appendChild(btn);
+  item.appendChild(label);
+  if (minutes !== null) {
+    const badge = el('span', 'tt-block__task-badge');
+    badge.textContent = `+${minutes} min`;
+    item.appendChild(badge);
+  }
+  return item;
 }
 
 function el(tag: string, className: string): HTMLElement {

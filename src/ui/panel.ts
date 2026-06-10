@@ -10,6 +10,7 @@
 
 import panelCssText from '@/ui/styles/panel.css?inline';
 
+import { formatBudgetClock } from '@/shared/budget';
 import { iconCheck, iconExternal, iconRefresh } from '@/ui/icons';
 import { isSynthetic, type ListId, type Project, type Task } from '@/shared/types';
 
@@ -28,6 +29,11 @@ export interface PanelHeader {
   smartListCaption?: string;
   onListChange: (listId: ListId) => void;
   onRefresh: () => void;
+  /** YouTube milliseconds still earned-but-unspent today, surfaced by an
+   * active budget-style gate. Omitted when gating is off or the gate isn't a
+   * budget gate — the countdown banner is then not rendered. Milliseconds
+   * (not minutes) so the banner can show a live M:SS countdown. */
+  budgetMsLeft?: number;
 }
 
 export type PanelState =
@@ -57,6 +63,10 @@ export function renderPanel(root: HTMLElement, state: PanelState): void {
   root.replaceChildren();
 
   if ('header' in state && state.header) {
+    // Budget countdown sits at the very top — above the list-picker dropdown.
+    if (state.header.budgetMsLeft !== undefined) {
+      root.appendChild(renderBudget(state.header.budgetMsLeft));
+    }
     const caption = isSynthetic(state.header.currentListId)
       ? state.header.smartListCaption
       : undefined;
@@ -180,6 +190,27 @@ function renderHeader(header: PanelHeader, caption: string | undefined): HTMLEle
   }
 
   return bar;
+}
+
+// Big live "M:SS left on YouTube today" countdown, shown at the top of the
+// panel when an active budget gate reports a remaining allowance. Time-driven,
+// so it tolerates 0 (e.g. just before the block overlay re-locks the page).
+// The lifecycle ticks `.tt-panel__budget-value` every second in place.
+function renderBudget(msLeft: number): HTMLElement {
+  const banner = document.createElement('div');
+  banner.className = 'tt-panel__budget';
+
+  const value = document.createElement('strong');
+  value.className = 'tt-panel__budget-value';
+  value.textContent = formatBudgetClock(msLeft);
+  banner.appendChild(value);
+
+  const label = document.createElement('span');
+  label.className = 'tt-panel__budget-label';
+  label.textContent = 'left on YouTube today';
+  banner.appendChild(label);
+
+  return banner;
 }
 
 function heading(text: string): HTMLElement {

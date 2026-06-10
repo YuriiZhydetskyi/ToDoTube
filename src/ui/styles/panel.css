@@ -81,6 +81,22 @@
     @apply border-b border-tt-border pb-4;
   }
 
+  /* Live "M:SS left on YouTube today" countdown at the very top of the panel,
+   * above the list picker. Brand-tinted so it reads as a ToDoTube affordance
+   * rather than YouTube chrome. */
+  .tt-panel__budget {
+    @apply mb-5 flex flex-col gap-0.5 rounded-tt-lg px-4 py-3;
+    background: var(--tt-brand-soft);
+  }
+  .tt-panel__budget-value {
+    @apply text-4xl font-extrabold leading-none text-tt-brand;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .tt-panel__budget-label {
+    @apply text-sm font-medium text-tt-fg-muted;
+  }
+
   /* Native select styled as a typographic statement. Default arrow is
    * hidden; we draw our own chevron via background-image. */
   .tt-panel__select {

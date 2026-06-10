@@ -5,10 +5,11 @@
 // narrowed by a small set of type guards. The rest of the file is
 // strictly typed.
 
+import { fetchWithTimeout } from '@/shared/fetch';
 import { log } from '@/shared/logger';
 import { err, ok, type Result } from '@/shared/result';
 
-import { API_BASE } from './config';
+import { API_BASE, API_TIMEOUT_MS } from './config';
 import { forceRefresh, getValidTokens } from './oauth';
 
 export interface TickTickProject {
@@ -28,6 +29,9 @@ export interface TickTickTask {
   startDate?: string;
   priority?: number;
   status: number;
+  // Present on tasks returned by the completed-tasks endpoint:
+  // "yyyy-MM-dd'T'HH:mm:ssZ". Absent on the undone-task /data endpoint.
+  completedTime?: string;
 }
 
 export interface ProjectData {
@@ -55,6 +59,33 @@ export async function getProjectData(projectId: string): Promise<Result<ProjectD
   return ok(json);
 }
 
+/**
+ * Retrieve tasks marked completed within [startDate, endDate] (filtered by
+ * completedTime). Dates are ISO-8601 with offset, e.g.
+ * "2026-03-01T00:58:20.000+0000". `projectIds` is optional — omit to span
+ * all projects.
+ *
+ * NOTE: This endpoint is NOT part of the small documented TickTick open API
+ * surface (which only exposes UNDONE tasks via /project/{id}/data). It is
+ * verified empirically against api.ticktick.com — if it 404s, the caller
+ * must fall back. See docs / the gate's data source.
+ */
+export async function getCompletedTasks(params: {
+  startDate: string;
+  endDate: string;
+  projectIds?: string[];
+}): Promise<Result<TickTickTask[], string>> {
+  const r = await authedFetch('/open/v1/task/completed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!r.ok) return err(r.error);
+  const json = await safeJson(r.value);
+  if (!Array.isArray(json)) return err('Expected an array from /open/v1/task/completed');
+  return ok(json.filter(isTickTickTask));
+}
+
 export async function completeTask(
   projectId: string,
   taskId: string,
@@ -80,8 +111,9 @@ async function authedFetch(
 
   let resp: Response;
   try {
-    resp = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    resp = await fetchWithTimeout(`${API_BASE}${path}`, { ...init, headers }, API_TIMEOUT_MS);
   } catch (e) {
+    // Network error, or the request outliving API_TIMEOUT_MS (a hung socket).
     return err(`Network error: ${e instanceof Error ? e.message : String(e)}`);
   }
 

@@ -18,6 +18,10 @@ export interface GlobalState {
   // provider state, not settings, so we surface it here too — the
   // lifecycle needs both pieces to decide what to fetch.
   activeListId: ListId | null;
+  // Screen-time budget left today (earned − spent) per the active budget
+  // gate, in ms. null when gating is off or the active gate isn't
+  // budget-style. The popup renders it as the universal countdown.
+  budgetMsLeft: number | null;
 }
 
 // Used in Schema entries that have no payload beyond the `type` tag.
@@ -50,11 +54,25 @@ export interface Schema {
   // watcher then broadcasts GATE_CHANGED — so there's no GATE_SET_* message.
   GATE_EVAL: { req: Empty; res: GateEvalResult };
 
-  // Content scripts report active YouTube watch time (the "spent" side of
-  // budget gates). The background accrues it against the local-day total.
-  YOUTUBE_TICK: { req: { deltaMs: number }; res: null };
+  // Completes a task via the active provider without the content script
+  // needing to know which provider is active. Used by the block screen's
+  // task list so the user can earn access without leaving the page.
+  COMPLETE_GATE_TASK: { req: { projectId: string; taskId: string }; res: null };
+
+  // Content scripts on blocked sites report active screen time (the "spent"
+  // side of budget gates) — all enabled sites share the one daily tally. The
+  // background accrues it against the local-day total.
+  USAGE_TICK: { req: { deltaMs: number }; res: null };
   // Options page "Test Anki connection" — reads the Anki study signal once.
   ANKI_TEST: { req: Empty; res: { studyMinutesToday: number } };
+  // Options page "Test bridge connection" — reads the activity bridge once
+  // for the chosen metric. The background resolves `metric` against the gate's
+  // catalogue (the ui layer can't import gates/), so the request stays to two
+  // plain strings. `value`/`unit` are in the metric's display unit.
+  HTTP_SIGNAL_TEST: { req: { url: string; metric: string }; res: { value: number; unit: string } };
+  // Options page "Test sync" — reads the configured backend once and reports how
+  // many device records it can see for today (this device + any others).
+  SYNC_TEST: { req: Empty; res: { devices: number } };
 }
 
 export type MessageType = keyof Schema;

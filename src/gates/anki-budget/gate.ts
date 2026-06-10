@@ -1,7 +1,7 @@
 // Anki budget gate — the continuous-credit case of the ledger model.
 //
 // earned = (Anki minutes studied today) × ratio
-// spent  = (YouTube minutes watched today)
+// spent  = (screen-time minutes used today)
 // allowed while earned − spent > 0.
 //
 // When Anki is unreachable the gate applies the user's fail mode (default
@@ -17,14 +17,14 @@ import {
   type GateDecision,
 } from '@/shared/types';
 
+import { MINUTE_MS, ledgerDecision, toMin } from '../_shared/ledger';
 import type { Gate, GateContext } from '../types';
 
-const MINUTE_MS = 60_000;
 const DEFAULT_RATIO = 1;
 type FailMode = 'open' | 'closed';
 
 interface AnkiGateConfig {
-  // YouTube minutes earned per Anki minute studied. 1 = parity.
+  // Screen-time minutes earned per Anki minute studied. 1 = parity.
   ratio: number;
   // What to do when AnkiConnect can't be reached.
   failMode: FailMode;
@@ -42,13 +42,35 @@ function readConfig(config: GateConfig): AnkiGateConfig {
   };
 }
 
-const toMin = (ms: number): number => Math.round(ms / MINUTE_MS);
-
 const ankiSetupAction = { label: 'AnkiConnect setup', url: ANKI_SETUP_URL };
 
 export const ankiBudgetGate: Gate = {
   id: ANKI_BUDGET_GATE_ID,
   displayName: 'Earn time with Anki',
+
+  configSchema: [
+    {
+      kind: 'number',
+      key: 'ratio',
+      label: 'Minutes earned per Anki minute',
+      help: 'Earned viewing time per minute studied. 1 = parity; 0.5 = study twice as long as you watch.',
+      default: DEFAULT_RATIO,
+      min: 0.25,
+      max: 10,
+      step: 0.25,
+    },
+    {
+      kind: 'select',
+      key: 'failMode',
+      label: 'When Anki is closed',
+      help: 'Anki must be running for its study time to count.',
+      default: 'closed',
+      options: [
+        ['closed', 'Block the sites'],
+        ['open', 'Allow the sites'],
+      ],
+    },
+  ],
 
   async evaluate(ctx: GateContext): Promise<GateDecision> {
     const cfg = readConfig(ctx.config);
@@ -56,12 +78,12 @@ export const ankiBudgetGate: Gate = {
     const signal = await ctx.readSignal(ANKI_STUDY_SIGNAL_ID);
     if (!signal.ok) {
       if (cfg.failMode === 'open') {
-        return { allowed: true, requirement: { title: 'YouTube unlocked' } };
+        return { allowed: true, requirement: { title: 'Access unlocked' } };
       }
       return {
         allowed: false,
         requirement: {
-          title: 'Open Anki to unlock YouTube',
+          title: 'Open Anki to unlock access',
           detail: `Couldn't reach Anki (${signal.error}). Start Anki, install AnkiConnect, and allow this extension in its CORS list.`,
           action: ankiSetupAction,
         },
@@ -69,27 +91,13 @@ export const ankiBudgetGate: Gate = {
     }
 
     const earnedMs = signal.value.value * cfg.ratio;
-    const spentMs = ctx.youtubeUsageTodayMs;
-    const allowed = earnedMs - spentMs > 0;
-
-    if (allowed) {
-      return { allowed: true, earnedMs, spentMs, requirement: { title: 'YouTube unlocked' } };
-    }
-
+    const spentMs = ctx.spentTodayMs;
     const remainingStudyMin = Math.max(1, Math.ceil((spentMs - earnedMs) / cfg.ratio / MINUTE_MS));
-    return {
-      allowed: false,
-      earnedMs,
-      spentMs,
-      requirement: {
-        title: 'Study in Anki to unlock YouTube',
-        detail: `Earned ${toMin(earnedMs)} min · watched ${toMin(spentMs)} min today. Study ~${remainingStudyMin} more min to keep watching.`,
-        progress:
-          spentMs > 0
-            ? { current: toMin(earnedMs), target: toMin(spentMs), unit: 'min' }
-            : undefined,
-        action: ankiSetupAction,
-      },
-    };
+
+    return ledgerDecision(earnedMs, spentMs, {
+      blockedTitle: 'Study in Anki to unlock access',
+      blockedDetail: `Earned ${toMin(earnedMs)} min · used ${toMin(spentMs)} min today. Study ~${remainingStudyMin} more min to keep browsing.`,
+      action: ankiSetupAction,
+    });
   },
 };

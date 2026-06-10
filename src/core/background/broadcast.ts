@@ -1,15 +1,19 @@
-// Background → content-script broadcast. Only YouTube tabs receive these;
+// Background → content-script broadcast. Only blocked-site tabs receive these;
 // the alternative (`browser.runtime.sendMessage`) would also wake popup
 // and options, which would log spurious "no listener" errors.
 
 import { browser } from 'wxt/browser';
 
+import { BLOCKED_SITE_MATCHES } from '@/shared/blocklist';
 import { log } from '@/shared/logger';
 import type { Broadcast } from '@/shared/messaging';
 
-export async function broadcastToYouTubeTabs(msg: Broadcast): Promise<void> {
+export async function broadcastToBlockedTabs(msg: Broadcast): Promise<void> {
   try {
-    const tabs = await browser.tabs.query({ url: '*://*.youtube.com/*' });
+    // `tabs.query` accepts an array of URL patterns — the union of every
+    // blockable site. A YouTube-only message (e.g. TASKS_UPDATED) reaching a
+    // social tab is harmlessly ignored by its controller.
+    const tabs = await browser.tabs.query({ url: BLOCKED_SITE_MATCHES });
     await Promise.all(
       tabs.map((tab) =>
         tab.id == null

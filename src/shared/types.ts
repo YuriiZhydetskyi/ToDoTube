@@ -1,4 +1,7 @@
-// Cross-layer types. May not import from any other layer (shared is a leaf).
+// Cross-layer types. May not import from any other layer (shared is a leaf;
+// blocklist.ts is also in shared, so importing it stays intra-layer).
+
+import { BLOCKED_SITE_IDS } from './blocklist';
 
 export type ProviderId = 'ticktick';
 
@@ -76,10 +79,17 @@ export type GateId = string;
 
 export const TASK_COMPLETE_GATE_ID = 'task-complete';
 export const ANKI_BUDGET_GATE_ID = 'anki-budget';
+// Earn-time-from-an-external-activity-signal gate (e.g. Garmin via a local
+// bridge): the continuous-credit ledger parameterised by "X effort = Y min".
+export const ACTIVITY_BUDGET_GATE_ID = 'activity-budget';
 
 // Signal ids that gates reference live here (shared) so a gate can name a
 // signal without importing the signals/ layer — the core bridges the two.
 export const ANKI_STUDY_SIGNAL_ID = 'anki-study-today';
+// Generic JSON-over-HTTP sensor: reads a number out of any local/remote
+// endpoint (its url + json path arrive as per-read config). The activity
+// budget gate points it at a self-hosted fitness bridge.
+export const HTTP_SIGNAL_ID = 'http-json';
 
 // Docs URL for allowlisting this extension's origin in AnkiConnect's
 // `webCorsOriginList`. UI copy referenced by both the Anki gate (block
@@ -88,12 +98,51 @@ export const ANKI_STUDY_SIGNAL_ID = 'anki-study-today';
 // in signals/anki/constants.ts.)
 export const ANKI_SETUP_URL = 'https://foosoft.net/projects/anki-connect/#configuration';
 
+// Setup guide for the activity bridge (the small self-hosted service that
+// exposes Garmin — or any fitness source — as local JSON). UI copy shared
+// by the activity-budget gate's block screen and the options page, so it
+// lives here. (The bridge endpoint/port/JSON field names stay single-sourced
+// in gates/activity-budget/constants.ts.)
+export const ACTIVITY_BRIDGE_SETUP_URL =
+  'https://github.com/YuriiZhydetskyi/ToDoTube/blob/main/bridge/garmin/README.md';
+
 // Per-gate user configuration and per-gate persisted runtime state. Both
 // are opaque to the core — each gate reads/validates its own shape. Config
 // lives in Settings; state lives in its own storage item per gate,
 // mirroring ProviderState.
 export type GateConfig = Record<string, unknown>;
 export type GateState = Record<string, unknown>;
+
+// A gate declares its user-configurable fields as a small schema so the
+// options page can render them generically (no per-gate special-casing).
+// `key` is the GateConfig property the field reads/writes.
+export type GateConfigField =
+  | {
+      kind: 'number';
+      key: string;
+      label: string;
+      help?: string;
+      default: number;
+      min?: number;
+      max?: number;
+      step?: number;
+    }
+  | {
+      kind: 'select';
+      key: string;
+      label: string;
+      help?: string;
+      default: string;
+      options: ReadonlyArray<readonly [value: string, label: string]>;
+    }
+  | {
+      kind: 'text';
+      key: string;
+      label: string;
+      help?: string;
+      default: string;
+      placeholder?: string;
+    };
 
 // What to render on the block screen when access is denied.
 export interface RequirementView {
@@ -103,6 +152,10 @@ export interface RequirementView {
   progress?: { current: number; target: number; unit: string };
   // Optional call-to-action (e.g. "Open TickTick").
   action?: { label: string; url?: string };
+  // Optional task list for task-complete gate: shown on the block screen so
+  // the user can complete a task without leaving YouTube. Populated by the
+  // background handler — gates themselves have no provider access.
+  tasks?: Task[];
 }
 
 export interface GateDecision {
@@ -135,6 +188,11 @@ export interface GatingSettings {
   scope: GatingScope;
   activeGateId: GateId | null;
   gateConfigs: Record<GateId, GateConfig>;
+  // Which sites (by BLOCKED_SITES id) the budget actually blocks. All known
+  // sites share the one daily budget; this just picks which ones participate.
+  // A stored config missing this field is normalised to "all sites" by
+  // `normalizeBlockedSiteIds` (older installs predate the multi-site list).
+  blockedSiteIds: string[];
 }
 
 export const DEFAULT_GATING: GatingSettings = {
@@ -142,6 +200,44 @@ export const DEFAULT_GATING: GatingSettings = {
   scope: 'site',
   activeGateId: null,
   gateConfigs: {},
+  blockedSiteIds: BLOCKED_SITE_IDS,
+};
+
+// Read `blockedSiteIds` defensively: installs that stored `gating` before the
+// multi-site list existed have no field, which we treat as "all sites".
+export function normalizeBlockedSiteIds(gating: GatingSettings | undefined): string[] {
+  return gating?.blockedSiteIds ?? BLOCKED_SITE_IDS;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-device sync subsystem DTOs
+//
+// The "spent" side of the budget can be shared across a user's devices. The
+// transport is pluggable: `off` (this device only), `browser` (browser sync —
+// same-browser desktop only; storage.sync does NOT reach Firefox Android), or a
+// user-supplied HTTP backend (`supabase` / `cloudflare` / `upstash`). See
+// docs/SYNC.md. Behavioral interfaces live in shared/sync-transport.ts; only the
+// persisted settings shape lives here.
+// ---------------------------------------------------------------------------
+
+export type SyncMode = 'off' | 'browser' | 'supabase' | 'cloudflare' | 'upstash';
+
+export interface SyncSettings {
+  mode: SyncMode;
+  // Shared secret that groups a user's devices on an HTTP backend (and isolates
+  // them from other users' rows). Empty until an HTTP transport is configured;
+  // the same value is copied to each of the user's devices.
+  syncId: string;
+  // Per-mode user configuration (endpoint URL, key/secret), opaque to the core
+  // — each transport validates its own shape. Mirrors gating.gateConfigs and is
+  // rendered generically from each provider's configSchema.
+  config: Partial<Record<SyncMode, GateConfig>>;
+}
+
+export const DEFAULT_SYNC: SyncSettings = {
+  mode: 'off',
+  syncId: '',
+  config: {},
 };
 
 export interface Settings {
@@ -173,6 +269,10 @@ export interface Settings {
   // recommendation-replacement feature above — a user may run either,
   // both, or neither. See [[project-todotube-gating]].
   gating: GatingSettings;
+
+  // Multi-device sync for the gating "spent" budget. Off by default. See
+  // docs/SYNC.md.
+  sync: SyncSettings;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -190,6 +290,7 @@ export const DEFAULT_SETTINGS: Settings = {
   debugOverlay: false,
   selectorsOverride: null,
   gating: DEFAULT_GATING,
+  sync: DEFAULT_SYNC,
 };
 
 export interface ProviderState {
