@@ -73,7 +73,7 @@ Your priorities stay in view.
 
 ### Privacy & open source
 
-- Full privacy policy: see PRIVACY.md in the project repository.
+- Full privacy policy: https://github.com/YuriiZhydetskyi/ToDoTube/blob/main/PRIVACY.md
 - MIT-licensed. The full source is on GitHub — audit it, fork it,
   send a PR. If something in the listing or the policy is
   contradicted by the code, the code is the source of truth and the
@@ -97,22 +97,19 @@ youtube, todo, productivity, ticktick, focus, distraction-free, recommendations
 
 ## Support
 
-| Field           | Value                 |
-| --------------- | --------------------- |
-| Support email   | zhidetskij@gmail.com  |
-| Support website | GitHub repository URL |
-| License         | MIT                   |
+| Field           | Value                                       |
+| --------------- | ------------------------------------------- |
+| Support email   | zhidetskij@gmail.com                        |
+| Support website | https://github.com/YuriiZhydetskyi/ToDoTube |
+| License         | MIT                                         |
 
 ## Privacy policy URL
 
 Public URL of `PRIVACY.md` on the `main` branch:
 
 ```
-https://github.com/<user>/ToDoTube/blob/main/PRIVACY.md
+https://github.com/YuriiZhydetskyi/ToDoTube/blob/main/PRIVACY.md
 ```
-
-Replace `<user>` with the GitHub account that owns the published repo
-before submitting.
 
 ## Screenshot plan
 

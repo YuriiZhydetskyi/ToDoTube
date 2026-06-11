@@ -34,6 +34,25 @@ export function findRecommendationsRail(doc: Document): Element | null {
   return best?.el ?? null;
 }
 
+// The player element wrapping a given <video>. Walks up to the stable
+// player containers, falling back to the parent so callers always get a
+// usable element. Kept here (not in triggers.ts) so the YouTube ids stay
+// in the one file allowed to name them.
+export function findPlayerForVideo(video: Element): HTMLElement | null {
+  return (video.closest('#movie_player') ??
+    video.closest('.html5-video-player') ??
+    video.parentElement) as HTMLElement | null;
+}
+
+// True once the player has transitioned into its end-of-video state.
+// YouTube toggles this class on the player element when playback ends
+// (in both autoplay-on and autoplay-off flows); it is the reliable
+// "the endscreen is now showing" signal, unlike the endscreen element's
+// geometry, which is nonzero during normal playback too.
+export function isPlayerEnded(player: Element): boolean {
+  return player.classList.contains('ended-mode');
+}
+
 export function findEndscreenContainer(doc: Document): Element | null {
   // The endscreen is always inside the player.
   const player = doc.querySelector('#movie_player') ?? doc.querySelector('.html5-video-player');

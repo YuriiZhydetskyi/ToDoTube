@@ -4,7 +4,14 @@
 /* The panel renders inside a shadow root attached to a host element in
  * YouTube's DOM. Custom properties inherit through the shadow boundary,
  * so `var(--yt-spec-*)` resolves against the document — that's how the
- * panel follows YouTube's light/dark theme without any code. */
+ * panel follows YouTube's light/dark theme without any code.
+ *
+ * IMPORTANT: the host element carries inline `all: initial` (see
+ * createHost in the surface adapter), and inline styles beat every
+ * normal `:host` declaration here — so `:host` blocks may declare ONLY
+ * custom properties (`all` does not reset those). Everything visual
+ * (font, layout, the endscreen scrim) lives on `.tt-shell`, the first
+ * element inside the shadow root, where the page cannot interfere. */
 :host {
   --tt-bg: var(--yt-spec-base-background, #ffffff);
   --tt-bg-elevated: var(--yt-spec-additive-background, var(--yt-spec-base-background, #ffffff));
@@ -34,17 +41,27 @@
   --tt-pill-muted-fg: var(--yt-spec-text-secondary, #606060);
   --tt-error-fg: #d93025;
   --tt-error-bg: color-mix(in srgb, #d93025 12%, transparent);
+}
 
-  display: block;
+/* Shadow-internal wrapper around the render target (see createHost). All
+ * host-level visuals live here — unlike `:host`, nothing from the page
+ * (including the host's own inline reset) can override these rules. */
+.tt-shell {
   font-family: var(--font-sans);
   font-feature-settings: 'ss01';
 }
 
-:host([data-todotube-panel='endscreen']) {
+:host([data-todotube-panel='endscreen']) .tt-shell {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 100%;
+  height: 100%;
+  overflow-y: auto;
+  /* Opaque cover over the whole player box: hides EVERY native endscreen
+   * element underneath (the videowall grid + the autonav "Up next" card)
+   * without us having to find and hide each one. Static near-black — the
+   * player chrome is dark in both YouTube themes. */
+  background: #0f0f0f;
 }
 
 @layer components {
@@ -56,6 +73,11 @@
     @apply max-w-lg;
     margin: auto;
     width: 92%;
+    /* Long task lists scroll inside the card, not past the player box.
+     * Percentage resolves against the shell (height:100% of the host,
+     * which is pinned to the player box). */
+    max-height: 85%;
+    overflow-y: auto;
   }
   /* Right-rail variant: panel sticks to viewport (positioning lives on
    * the page-side host element), so cap its height and scroll internally
@@ -136,7 +158,9 @@
 
   /* ───── Header icon-buttons ────────────────────────────────────── */
   .tt-panel__open,
-  .tt-panel__refresh {
+  .tt-panel__refresh,
+  .tt-panel__peek,
+  .tt-panel__close {
     @apply inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center
            rounded-tt-md border border-tt-border bg-tt-bg text-tt-fg-muted
            transition-all duration-150 ease-tt
@@ -324,6 +348,25 @@
            border border-transparent bg-tt-accent px-4 py-3 text-xl font-medium text-tt-accent-fg
            transition-all duration-150 ease-tt
            hover:opacity-90
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
+  }
+
+  /* ───── Peek chip ──────────────────────────────────────────────── */
+  /* Slim bar shown in place of the panel while the native recommendations
+   * are revealed. Same outer rhythm as .tt-panel so the rail doesn't jump. */
+  .tt-peek {
+    @apply flex items-center justify-between gap-2 rounded-tt-lg border border-tt-border
+           bg-tt-bg px-4 py-3 text-tt-fg;
+    margin: 0 0 16px 0;
+  }
+  .tt-peek__label {
+    @apply text-sm text-tt-fg-muted;
+  }
+  .tt-peek__btn {
+    @apply inline-flex shrink-0 cursor-pointer items-center rounded-tt-pill border-0
+           bg-transparent px-3 py-1.5 text-sm font-medium text-tt-brand
+           transition-colors duration-150 ease-tt
+           hover:bg-tt-brand-soft
            focus:outline-none focus-visible:ring-2 focus-visible:ring-tt-accent-soft;
   }
 

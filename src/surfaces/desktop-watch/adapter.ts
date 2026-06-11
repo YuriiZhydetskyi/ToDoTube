@@ -13,7 +13,7 @@
 // core/lifecycle.ts catches and treats as "leave YouTube alone."
 
 import { resolve } from './resolver';
-import { selectors, type AnchorName } from './selectors';
+import { RIGHT_COLUMN_SELECTOR, selectors, type AnchorName } from './selectors';
 
 export class SelectorMissError extends Error {
   constructor(public readonly anchor: AnchorName) {
@@ -26,6 +26,11 @@ export interface MountHandle {
   readonly root: HTMLElement;
   readonly strategyIndex: number;
   unmount: () => void;
+  /** Temporarily restore the hidden native slot (the host stays mounted,
+   * so whatever is rendered into `root` sits directly above the slot). */
+  reveal: () => void;
+  /** Re-hide the native slot after a reveal(). */
+  conceal: () => void;
 }
 
 export interface MountOptions {
@@ -44,6 +49,14 @@ function createHost(
   // Reset the host's own box so YouTube's stylesheets (which target
   // ancestors) leak in as little as possible. The shadow root underneath
   // is fully isolated; this just keeps the host's outer layout sane.
+  //
+  // CASCADE TRAP: these inline declarations beat every normal `:host`
+  // declaration in the shadow stylesheet (outer tree wins), and
+  // `all: initial` covers every property except custom properties. So
+  // `:host { ... }` rules in panel.css are dead for anything but `--tt-*`
+  // variables — all real visuals (font, layout, the endscreen scrim) must
+  // live on the `.tt-shell` element INSIDE the shadow root, where nothing
+  // from the page can reach them.
   host.style.all = 'initial';
   host.style.display = 'block';
   host.style.boxSizing = 'border-box';
@@ -53,8 +66,12 @@ function createHost(
   style.textContent = cssText;
   shadow.appendChild(style);
 
+  const shell = document.createElement('div');
+  shell.className = 'tt-shell';
+  shadow.appendChild(shell);
+
   const root = document.createElement('div');
-  shadow.appendChild(root);
+  shell.appendChild(root);
   return { host, root };
 }
 
@@ -76,12 +93,12 @@ export function mountRightRail(opts: MountOptions): MountHandle {
 
   // Keep the panel visible while scrolling through comments. `position:
   // sticky` only sticks within its parent's box, so applying it to our
-  // host alone fails — YouTube's right column (#secondary) is shorter
-  // than the comments column on the left. Apply sticky to #secondary
-  // itself instead: its parent is ytd-watch-flexy, which spans the full
-  // page height, so the whole right column (and our panel inside it)
-  // stays pinned as the user scrolls. 72px = masthead (~56px) + gap.
-  const secondary = host.closest<HTMLElement>('#secondary');
+  // host alone fails — YouTube's right column is shorter than the
+  // comments column on the left. Apply sticky to the column itself
+  // instead: its parent (the watch-page wrapper) spans the full page
+  // height, so the whole right column (and our panel inside it) stays
+  // pinned as the user scrolls. 72px = masthead (~56px) + gap.
+  const secondary = host.closest<HTMLElement>(RIGHT_COLUMN_SELECTOR);
   const stickyCleanup = secondary ? applySticky(secondary) : null;
 
   return {
@@ -91,6 +108,12 @@ export function mountRightRail(opts: MountOptions): MountHandle {
       stickyCleanup?.();
       host.remove();
       slot.style.display = originalDisplay;
+    },
+    reveal: () => {
+      slot.style.display = originalDisplay;
+    },
+    conceal: () => {
+      slot.style.display = 'none';
     },
   };
 }
@@ -123,10 +146,13 @@ export function mountEndscreen(opts: MountOptions): MountHandle {
   const { host, root } = createHost('endscreen', opts.cssText);
 
   // Cover the player area entirely — positioning lives on the host
-  // element so the shadow root content can flow normally inside.
+  // element so the shadow root content can flow normally inside. High
+  // z-index: the overlay must sit above every endscreen layer of the
+  // player (incl. the newer grid UI); covering the player controls while
+  // the overlay is up is intended — the X button is the way out.
   host.style.position = 'absolute';
   host.style.inset = '0';
-  host.style.zIndex = '60';
+  host.style.zIndex = '9999';
   host.style.pointerEvents = 'auto';
 
   const originalVisibility = slot.style.visibility;
@@ -146,6 +172,15 @@ export function mountEndscreen(opts: MountOptions): MountHandle {
     unmount: () => {
       host.remove();
       slot.style.visibility = originalVisibility;
+    },
+    // Implemented for interface symmetry; the lifecycle only peeks the rail.
+    reveal: () => {
+      slot.style.visibility = originalVisibility;
+      host.style.display = 'none';
+    },
+    conceal: () => {
+      slot.style.visibility = 'hidden';
+      host.style.display = 'block';
     },
   };
 }

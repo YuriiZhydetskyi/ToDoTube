@@ -8,6 +8,17 @@
 
 import { findEndscreenContainer, findRecommendationsRail } from './heuristics';
 
+// YouTube's SPA router fires this on every completed navigation (including
+// the initial full-page load). The literal lives here so it stays under the
+// CI selector guard; consumers import the constant via triggers.ts.
+export const NAVIGATE_FINISH_EVENT = 'yt-navigate-finish';
+
+// The watch page's whole right column (the rail plus everything around
+// it). The adapter pins this element with position:sticky so the panel
+// stays visible while scrolling the comments. Not an Anchor — it's only
+// ever looked up relative to an already-resolved rail mount.
+export const RIGHT_COLUMN_SELECTOR = '#secondary';
+
 export interface Anchor {
   readonly description: string;
   readonly strategies: ReadonlyArray<() => Element | null>;

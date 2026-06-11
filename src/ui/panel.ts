@@ -11,7 +11,7 @@
 import panelCssText from '@/ui/styles/panel.css?inline';
 
 import { formatBudgetClock } from '@/shared/budget';
-import { iconCheck, iconExternal, iconRefresh } from '@/ui/icons';
+import { iconCheck, iconClose, iconExternal, iconEye, iconRefresh } from '@/ui/icons';
 import { isSynthetic, type ListId, type Project, type Task } from '@/shared/types';
 
 export const panelCss: string = panelCssText;
@@ -29,6 +29,15 @@ export interface PanelHeader {
   smartListCaption?: string;
   onListChange: (listId: ListId) => void;
   onRefresh: () => void;
+  /** Present only where the panel can step aside for the native content
+   * it replaced (the right rail). The lifecycle handles the actual
+   * reveal; the header just renders the button when the callback is
+   * supplied. */
+  onPeek?: () => void;
+  /** Present only on the endscreen overlay: dismisses the task panel and
+   * returns the user to the native player. The lifecycle performs the
+   * unmount; the header just renders the close (X) button. */
+  onClose?: () => void;
   /** YouTube milliseconds still earned-but-unspent today, surfaced by an
    * active budget-style gate. Omitted when gating is off or the gate isn't a
    * budget gate — the countdown banner is then not rendered. Milliseconds
@@ -136,6 +145,30 @@ export function renderPanel(root: HTMLElement, state: PanelState): void {
 // can keep using either; both render the full panel into `root`.
 export const updatePanel = renderPanel;
 
+export interface PeekChipState {
+  onBack: () => void;
+}
+
+// Slim bar rendered in place of the panel while the user "peeks" at the
+// native content the panel normally replaces. A later renderPanel() call
+// fully restores the panel (it resets className and children).
+export function renderPeekChip(root: HTMLElement, state: PeekChipState): void {
+  root.className = 'tt-peek';
+  root.replaceChildren();
+
+  const label = document.createElement('span');
+  label.className = 'tt-peek__label';
+  label.textContent = 'Tasks hidden';
+  root.appendChild(label);
+
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'tt-peek__btn';
+  back.textContent = 'Back to tasks';
+  back.addEventListener('click', () => state.onBack());
+  root.appendChild(back);
+}
+
 function renderHeader(header: PanelHeader, caption: string | undefined): HTMLElement {
   const bar = document.createElement('div');
   bar.className = 'tt-panel__header';
@@ -181,6 +214,30 @@ function renderHeader(header: PanelHeader, caption: string | undefined): HTMLEle
   refresh.appendChild(iconRefresh());
   refresh.addEventListener('click', () => header.onRefresh());
   bar.appendChild(refresh);
+
+  if (header.onPeek) {
+    const onPeek = header.onPeek;
+    const peek = document.createElement('button');
+    peek.type = 'button';
+    peek.className = 'tt-panel__peek';
+    peek.setAttribute('aria-label', 'Show YouTube recommendations');
+    peek.title = 'Show recommendations';
+    peek.appendChild(iconEye());
+    peek.addEventListener('click', () => onPeek());
+    bar.appendChild(peek);
+  }
+
+  if (header.onClose) {
+    const onClose = header.onClose;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tt-panel__close';
+    close.setAttribute('aria-label', 'Close tasks and return to the video');
+    close.title = 'Back to the video';
+    close.appendChild(iconClose());
+    close.addEventListener('click', () => onClose());
+    bar.appendChild(close);
+  }
 
   if (caption) {
     const cap = document.createElement('div');

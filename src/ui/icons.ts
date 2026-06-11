@@ -52,10 +52,24 @@ export function iconRefresh(opts?: IconOptions): SVGSVGElement {
   );
 }
 
+export function iconEye(opts?: IconOptions): SVGSVGElement {
+  return svg(
+    [
+      'M2.06 12.35a1 1 0 0 1 0-.7C3.42 8.1 7.22 5 12 5s8.58 3.1 9.94 6.65a1 1 0 0 1 0 .7C20.58 15.9 16.78 19 12 19s-8.58-3.1-9.94-6.65Z',
+      'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+    ],
+    opts,
+  );
+}
+
 export function iconCheck(opts?: IconOptions): SVGSVGElement {
   return svg(['M20 6 9 17l-5-5'], { strokeWidth: 2.25, ...opts });
 }
 
 export function iconChevronDown(opts?: IconOptions): SVGSVGElement {
   return svg(['m6 9 6 6 6-6'], opts);
+}
+
+export function iconClose(opts?: IconOptions): SVGSVGElement {
+  return svg(['M18 6 6 18', 'M6 6l12 12'], opts);
 }

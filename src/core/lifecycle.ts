@@ -31,12 +31,24 @@ import {
   SelectorMissError,
   type MountHandle,
 } from '@/surfaces/desktop-watch/adapter';
-import { onEndscreenReady, type EndscreenTrigger } from '@/surfaces/desktop-watch/triggers';
-import { panelCss, renderPanel, type PanelHeader, type PanelState } from '@/ui/panel';
+import {
+  onEndscreenReady,
+  onNavigate,
+  type EndscreenTrigger,
+} from '@/surfaces/desktop-watch/triggers';
+import {
+  panelCss,
+  renderPanel,
+  renderPeekChip,
+  type PanelHeader,
+  type PanelState,
+} from '@/ui/panel';
 
 const WATCH_PATH = '/watch';
-const REMOUNT_RETRY_INTERVAL_MS = 250;
-const REMOUNT_RETRY_DEADLINE_MS = 5_000;
+// Trailing throttle for the DOM watcher's mount attempts. YouTube's DOM is
+// chatty (progress bar, chat), so the MutationObserver coalesces bursts into
+// at most one cheap resolve pass per interval.
+const DOM_WATCH_THROTTLE_MS = 250;
 // A cold MV3 service worker can miss the very first message after browser
 // or extension startup, so we retry the initial GET_STATE a few times.
 const GET_STATE_RETRY_INTERVAL_MS = 300;
@@ -73,7 +85,17 @@ interface State {
   rightRailMount: MountHandle | null;
   endscreenMount: MountHandle | null;
   endscreenTrigger: EndscreenTrigger | null;
-  retryScheduled: boolean;
+  // Last href seen by handleNavigation — dedupes the two navigation
+  // sources (YouTube's navigate event + the wxt:locationchange poll).
+  lastHref: string;
+  // Watches the page DOM for the anchors we still need (rail, player).
+  // Non-null only while something is pending; disposed once all work is
+  // done or the user leaves the watch page.
+  domWatcher: { dispose: () => void } | null;
+  // True while the user "peeks" at the native recommendations: the rail
+  // slot is revealed and the panel shows only the back-to-tasks chip.
+  // Per-video — reset on every navigation.
+  peeking: boolean;
 }
 
 export function start(ctx: ContentScriptContext): void {
@@ -95,7 +117,9 @@ export function start(ctx: ContentScriptContext): void {
     rightRailMount: null,
     endscreenMount: null,
     endscreenTrigger: null,
-    retryScheduled: false,
+    lastHref: window.location.href,
+    domWatcher: null,
+    peeking: false,
   };
 
   void initState(state);
@@ -106,18 +130,39 @@ export function start(ctx: ContentScriptContext): void {
     if (state.ctx.isValid) tickBudget(state);
   }, 1000);
 
-  ctx.addEventListener(window, 'wxt:locationchange', () => {
-    log.debug('locationchange:', window.location.href);
-    evaluate(state);
-  });
+  // Two navigation sources funneled through one href-deduped handler:
+  // YouTube's own navigate-finish event (fast, fires when the new page
+  // is ready; see NAVIGATE_FINISH_EVENT) and WXT's 1-second URL poll as
+  // a safety net.
+  const navTrigger = onNavigate(() => handleNavigation(state));
+  ctx.addEventListener(window, 'wxt:locationchange', () => handleNavigation(state));
 
   const offBroadcast = onBroadcast((msg) => broadcastHandlers[msg.type](state, msg as never));
 
   ctx.onInvalidated(() => {
     log.debug('script invalidated; tearing down');
+    navTrigger.dispose();
     offBroadcast();
     teardown(state);
   });
+}
+
+function handleNavigation(state: State): void {
+  const href = window.location.href;
+  if (href === state.lastHref) return;
+  log.debug('navigation:', href);
+  state.lastHref = href;
+  perNavigationReset(state);
+  evaluate(state);
+}
+
+// Cleanup that must happen once per navigation, before re-evaluating:
+// the endscreen trigger is single-shot (and its mount belongs to the
+// previous video), and peek is a per-video escape hatch.
+function perNavigationReset(state: State): void {
+  unmountEndscreen(state);
+  if (state.peeking) onPeekBack(state);
+  disposeDomWatcher(state);
 }
 
 async function initState(state: State): Promise<void> {
@@ -255,16 +300,27 @@ function evaluate(state: State): void {
     return;
   }
 
-  if (state.replaceRightRail && !state.rightRailMount) {
-    scheduleMountRightRail(state, performance.now());
-  } else if (!state.replaceRightRail && state.rightRailMount) {
+  // Self-heal: YouTube occasionally rebuilds the rail subtree in place
+  // (watch→watch navigation, layout experiments), orphaning our host.
+  // `isConnected` on the shadow-tree root reflects host connectivity.
+  if (state.rightRailMount && !state.rightRailMount.root.isConnected) {
     unmountRightRail(state);
   }
 
-  if (state.replaceEndscreen && !state.endscreenTrigger) {
-    armEndscreenTrigger(state);
-  } else if (!state.replaceEndscreen) {
+  if (!state.replaceRightRail && state.rightRailMount) {
+    unmountRightRail(state);
+  }
+  if (!state.replaceEndscreen) {
     unmountEndscreen(state);
+  }
+
+  // Mount whatever is mountable right now; keep a DOM watcher alive while
+  // anything is still pending (YouTube hydrates the watch page lazily, so
+  // anchors can appear many seconds after navigation — never give up).
+  if (attemptPendingWork(state)) {
+    disposeDomWatcher(state);
+  } else {
+    ensureDomWatcher(state);
   }
 
   // Re-render mounted panels and kick off a fetch if we have a panel
@@ -272,45 +328,42 @@ function evaluate(state: State): void {
   refreshUi(state);
 }
 
-function scheduleMountRightRail(state: State, startTime: number): void {
-  if (state.retryScheduled) return;
-  state.retryScheduled = true;
-
-  const tick = (): void => {
-    state.retryScheduled = false;
-    if (!state.ctx.isValid) return;
-    if (!state.enabled || !isWatchPage() || !state.replaceRightRail) return;
-    if (state.rightRailMount) return;
-
-    try {
-      state.rightRailMount = mountRightRail({ cssText: panelCss });
-      renderPanel(state.rightRailMount.root, toPanelState(state));
-      log.info('Right rail mounted (strategy', state.rightRailMount.strategyIndex, ')');
-      refreshUi(state);
-    } catch (err) {
-      if (!(err instanceof SelectorMissError)) {
-        log.warn('Unexpected right-rail mount error:', err);
-        return;
-      }
-      const elapsed = performance.now() - startTime;
-      if (elapsed > REMOUNT_RETRY_DEADLINE_MS) {
-        log.warn('Right rail did not appear within', REMOUNT_RETRY_DEADLINE_MS, 'ms; giving up');
-        return;
-      }
-      state.retryScheduled = true;
-      state.ctx.setTimeout(tick, REMOUNT_RETRY_INTERVAL_MS);
-    }
-  };
-
-  state.ctx.setTimeout(tick, 0);
+// One pass over the work that may be blocked on YouTube's lazy DOM.
+// Returns true when nothing is left to wait for.
+function attemptPendingWork(state: State): boolean {
+  let done = true;
+  if (state.replaceRightRail && !state.rightRailMount) {
+    done = tryMountRightRail(state) && done;
+  }
+  if (state.replaceEndscreen && !state.endscreenTrigger) {
+    done = tryArmEndscreenTrigger(state) && done;
+  }
+  return done;
 }
 
-function armEndscreenTrigger(state: State): void {
-  state.endscreenTrigger = onEndscreenReady(() => {
+// Returns false only when waiting longer could help (anchor not in the
+// DOM yet). Unexpected errors are terminal for the watcher — observing
+// more mutations won't fix a bug.
+function tryMountRightRail(state: State): boolean {
+  try {
+    state.rightRailMount = mountRightRail({ cssText: panelCss });
+  } catch (err) {
+    if (err instanceof SelectorMissError) return false;
+    log.warn('Unexpected right-rail mount error:', err);
+    return true;
+  }
+  renderPanel(state.rightRailMount.root, toPanelState(state, 'rail'));
+  log.info('Right rail mounted (strategy', state.rightRailMount.strategyIndex, ')');
+  refreshUi(state);
+  return true;
+}
+
+function tryArmEndscreenTrigger(state: State): boolean {
+  const trigger = onEndscreenReady(() => {
     if (state.endscreenMount) return;
     try {
       state.endscreenMount = mountEndscreen({ cssText: panelCss });
-      renderPanel(state.endscreenMount.root, toPanelState(state));
+      renderPanel(state.endscreenMount.root, toPanelState(state, 'endscreen'));
       log.info('Endscreen mounted (strategy', state.endscreenMount.strategyIndex, ')');
     } catch (err) {
       if (!(err instanceof SelectorMissError)) {
@@ -318,6 +371,39 @@ function armEndscreenTrigger(state: State): void {
       }
     }
   });
+  // null = the video element isn't in the DOM yet; the watcher re-arms.
+  if (!trigger) return false;
+  state.endscreenTrigger = trigger;
+  return true;
+}
+
+function ensureDomWatcher(state: State): void {
+  if (state.domWatcher) return;
+
+  let lastAttempt = performance.now();
+  let pending = false;
+  const observer = new MutationObserver(() => {
+    if (pending) return;
+    pending = true;
+    const wait = Math.max(0, DOM_WATCH_THROTTLE_MS - (performance.now() - lastAttempt));
+    state.ctx.setTimeout(() => {
+      pending = false;
+      lastAttempt = performance.now();
+      if (!state.ctx.isValid || !state.domWatcher) return;
+      if (!state.enabled || !isWatchPage()) {
+        disposeDomWatcher(state);
+        return;
+      }
+      if (attemptPendingWork(state)) disposeDomWatcher(state);
+    }, wait);
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  state.domWatcher = { dispose: () => observer.disconnect() };
+}
+
+function disposeDomWatcher(state: State): void {
+  state.domWatcher?.dispose();
+  state.domWatcher = null;
 }
 
 function unmountRightRail(state: State): void {
@@ -329,6 +415,7 @@ function unmountRightRail(state: State): void {
     }
   }
   state.rightRailMount = null;
+  state.peeking = false;
 }
 
 function unmountEndscreen(state: State): void {
@@ -345,6 +432,7 @@ function unmountEndscreen(state: State): void {
 }
 
 function teardown(state: State): void {
+  disposeDomWatcher(state);
   unmountRightRail(state);
   unmountEndscreen(state);
 }
@@ -381,15 +469,26 @@ async function fetchTasks(state: State): Promise<void> {
 
 function setUi(state: State, ui: UIState): void {
   state.ui = ui;
-  const panelState = toPanelState(state);
-  if (state.rightRailMount) renderPanel(state.rightRailMount.root, panelState);
-  if (state.endscreenMount) renderPanel(state.endscreenMount.root, panelState);
+  // While peeking the rail shows only the back-to-tasks chip — don't let
+  // broadcast-driven re-renders clobber it. The fresh state is picked up
+  // when the user returns (onPeekBack re-renders from state).
+  if (state.rightRailMount && !state.peeking) {
+    renderPanel(state.rightRailMount.root, toPanelState(state, 'rail'));
+  }
+  if (state.endscreenMount) {
+    renderPanel(state.endscreenMount.root, toPanelState(state, 'endscreen'));
+  }
 }
 
-function toPanelState(state: State): PanelState {
+// Which mount the panel state is being built for. The peek affordance
+// only makes sense where the panel replaced the native content in-place
+// (the rail) — the endscreen header never gets it.
+type PanelSurface = 'rail' | 'endscreen';
+
+function toPanelState(state: State, surface: PanelSurface): PanelState {
   switch (state.ui.kind) {
     case 'loading':
-      return { kind: 'loading', header: buildHeader(state) };
+      return { kind: 'loading', header: buildHeader(state, surface) };
     case 'disconnected':
       return {
         kind: 'disconnected',
@@ -397,26 +496,26 @@ function toPanelState(state: State): PanelState {
         onConnect: () => void onConnectClick(state),
       };
     case 'empty':
-      return { kind: 'empty', header: buildHeader(state) };
+      return { kind: 'empty', header: buildHeader(state, surface) };
     case 'list':
       return {
         kind: 'list',
         tasks: state.ui.tasks,
         onComplete: (t) => void onCompleteClick(state, t),
         onOpenTask: state.clickBehavior === 'open' ? (t) => openTask(state, t) : undefined,
-        header: buildHeader(state),
+        header: buildHeader(state, surface),
       };
     case 'error':
       return {
         kind: 'error',
         message: state.ui.message,
         onRetry: () => void fetchTasks(state),
-        header: buildHeader(state),
+        header: buildHeader(state, surface),
       };
   }
 }
 
-function buildHeader(state: State): PanelHeader | undefined {
+function buildHeader(state: State, surface: PanelSurface): PanelHeader | undefined {
   if (!state.authenticated) return undefined;
   const provider = getProviderDescriptor(state.providerId);
   return {
@@ -431,7 +530,38 @@ function buildHeader(state: State): PanelHeader | undefined {
       void loadProjects(state);
       void fetchTasks(state);
     },
+    onPeek: surface === 'rail' ? () => onPeekClick(state) : undefined,
+    onClose: surface === 'endscreen' ? () => onEndscreenClose(state) : undefined,
   };
+}
+
+// "Peek at recommendations": reveal the native rail under our host and
+// swap the panel for a slim chip with the way back. Per-video — see
+// perNavigationReset.
+function onPeekClick(state: State): void {
+  const mount = state.rightRailMount;
+  if (!mount || state.peeking) return;
+  state.peeking = true;
+  mount.reveal();
+  renderPeekChip(mount.root, { onBack: () => onPeekBack(state) });
+}
+
+// Close the endscreen task overlay and hand the player back to the user:
+// unmounting restores the native ended screen (slot visibility), so they
+// can scrub back and rewatch. Re-arm so the panel returns if the video
+// re-enters its ended state later — safe because the trigger fires only on
+// a transition, and the player is still ended right after close.
+function onEndscreenClose(state: State): void {
+  unmountEndscreen(state);
+  if (state.replaceEndscreen) tryArmEndscreenTrigger(state);
+}
+
+function onPeekBack(state: State): void {
+  state.peeking = false;
+  const mount = state.rightRailMount;
+  if (!mount) return;
+  mount.conceal();
+  renderPanel(mount.root, toPanelState(state, 'rail'));
 }
 
 async function onConnectClick(state: State): Promise<void> {

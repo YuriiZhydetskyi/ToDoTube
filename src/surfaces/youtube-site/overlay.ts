@@ -1,6 +1,6 @@
 // Full-page block overlay surface. Unlike the watch-page panel adapters,
 // this surface needs NO YouTube DOM knowledge — it attaches its own host
-// to <html> and covers everything, so there are no `ytd-…` selectors here.
+// to <html> and covers everything, so no YouTube selectors appear here.
 //
 // It also pauses any playing <video> while mounted (a standard HTML tag,
 // not a YouTube-specific identifier) so audio doesn't keep going behind the

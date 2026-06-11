@@ -11,9 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm version comes from "packageManager" in package.json
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -32,7 +31,9 @@ jobs:
         run: pnpm test
 
       # Selector guard — YouTube identifiers must live ONLY in
-      # src/surfaces/<surface>/{selectors,heuristics}.ts. See
+      # src/surfaces/<surface>/{selectors,heuristics}.ts. Their paired
+      # .test.ts files are also allowed (they build YouTube-shaped DOM to
+      # exercise those modules), mirroring the blocklist guard below. See
       # docs/SELECTORS.md and REQUIREMENTS.md §6.1.
       - name: Selector guard
         run: |
@@ -43,7 +44,7 @@ jobs:
           fi
           leaked=$(grep -RIn --include='*.ts' \
                      -E '(\bytd-|yt-navigate-finish|#secondary|#related)' src/ \
-                   | grep -vE 'src/surfaces/[^/]+/(selectors|heuristics)\.ts' \
+                   | grep -vE 'src/surfaces/[^/]+/(selectors|heuristics)(\.test)?\.ts' \
                    || true)
           if [ -n "$leaked" ]; then
             echo "::error::YouTube identifiers leaked outside selectors.ts/heuristics.ts:"
