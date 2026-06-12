@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
-    "dev:firefox-android": "wxt build -b firefox && npx -y web-ext run -t firefox-android --source-dir .output/firefox-mv3",
+    "dev:firefox-android": "wxt build -b firefox && tsx scripts/run-android.ts",
     "build": "wxt build",
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip && wxt zip -b firefox",
