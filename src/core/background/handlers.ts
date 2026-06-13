@@ -56,5 +56,6 @@ function isRequest(v: unknown): v is Request {
 
 // Re-exported for the background entrypoint (alarm tick + gate broadcasts) and
 // the handlers unit test, which import these from this module.
+export { wireAuthBroadcasts, wireProviderAuth } from './handlers/auth';
 export { broadcastToBlockedTabs, enrichWithTasks, listTasksForUi, runRefresh };
 export type { Broadcast } from '@/shared/messaging';

@@ -21,6 +21,15 @@ export interface Provider {
    */
   authenticate(): Promise<Result<{ authenticated: boolean }, string>>;
 
+  /**
+   * Register background-lifetime listeners (e.g. the OAuth redirect
+   * capture). Called synchronously on every service-worker wake, BEFORE
+   * any await — listeners registered later can miss the very event that
+   * woke a dead worker. Must not await. Optional: providers without
+   * background listeners omit it.
+   */
+  wireBackground?(): void;
+
   isAuthenticated(): Promise<boolean>;
 
   /** Clear any persisted tokens. */

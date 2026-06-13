@@ -115,6 +115,9 @@ const settings: Settings = { ...DEFAULT_SETTINGS, activeProviderId: DEFAULT_PROV
 const listId = getProviderDescriptor(DEFAULT_PROVIDER_ID).defaultListId;
 
 let tasksResponse: Task[] = [];
+// GET_STATE's authenticated field — flipped to false by the disconnected
+// AUTH_CHANGED recovery test.
+let authedResponse = true;
 let broadcastHandler: ((msg: Broadcast) => void) | null = null;
 
 function task(id: string, title: string): Task {
@@ -125,7 +128,12 @@ function installMessagingMocks(): void {
   vi.mocked(sendToBackground).mockImplementation((async (req: { type: string }) => {
     switch (req.type) {
       case 'GET_STATE':
-        return ok({ settings, authenticated: true, activeListId: null, budgetMsLeft: null });
+        return ok({
+          settings,
+          authenticated: authedResponse,
+          activeListId: null,
+          budgetMsLeft: null,
+        });
       case 'LIST_TASKS':
         return ok(tasksResponse);
       case 'LIST_PROJECTS':
@@ -211,6 +219,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   ctx = makeCtx();
   tasksResponse = [task('t1', 'Task one')];
+  authedResponse = true;
   installMessagingMocks();
 });
 
@@ -300,6 +309,46 @@ describe('SPA navigation mounting', () => {
     });
     await flush();
     expect(railHost()).toBeNull();
+  });
+});
+
+describe('AUTH_CHANGED recovery', () => {
+  function listTasksCalls(): number {
+    return vi
+      .mocked(sendToBackground)
+      .mock.calls.filter(([req]) => (req as { type: string }).type === 'LIST_TASKS').length;
+  }
+
+  it('loads tasks when tokens appear after a worker-died login (disconnected → connected)', async () => {
+    authedResponse = false;
+    await boot('/watch?v=1', fixture);
+    // Disconnected: the panel mounts a Connect CTA but never fetched tasks.
+    expect(listTasksCalls()).toBe(0);
+
+    broadcastHandler?.({
+      type: 'AUTH_CHANGED',
+      providerId: DEFAULT_PROVIDER_ID,
+      authenticated: true,
+    });
+    await flush();
+
+    // The broadcast is the only signal that flips a stale disconnected panel.
+    expect(listTasksCalls()).toBeGreaterThan(0);
+  });
+
+  it('ignores AUTH_CHANGED when already authenticated (no duplicate fetch)', async () => {
+    await boot('/watch?v=1', fixture); // authedResponse = true (default)
+    const before = listTasksCalls();
+    expect(before).toBeGreaterThan(0);
+
+    broadcastHandler?.({
+      type: 'AUTH_CHANGED',
+      providerId: DEFAULT_PROVIDER_ID,
+      authenticated: true,
+    });
+    await flush();
+
+    expect(listTasksCalls()).toBe(before);
   });
 });
 

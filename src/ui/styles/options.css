@@ -187,6 +187,9 @@
   .tt-error {
     @apply mt-2 rounded-tt-sm bg-tt-error-bg px-3 py-2 text-sm text-tt-error-fg;
   }
+  .tt-hint {
+    @apply mt-2 rounded-tt-sm bg-tt-pill-muted-bg px-3 py-2 text-sm text-tt-pill-muted-fg;
+  }
   .tt-about-links {
     @apply flex flex-wrap gap-4;
   }

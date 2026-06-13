@@ -60,6 +60,18 @@ export async function renderAccountSection(
     if (authenticated) {
       await sendToBackground({ type: 'AUTH_DISCONNECT', providerId: PROVIDER_ID });
     } else {
+      // The background opens TickTick's sign-in in a new tab. On Firefox
+      // Android that tab opens BEHIND this full-screen settings page, so it
+      // looks like nothing happened — surface a hint pointing the user to
+      // it. Sign-in then completes in the background; the provider-state
+      // watcher (core/options.ts) flips this section to Connected on its
+      // own, even if this page was closed in the meantime.
+      container.append(
+        el('div', {
+          class: 'tt-hint',
+          text: 'Opened a TickTick sign-in tab — finish signing in there (on a phone, switch to your browser tabs to find it). This page updates automatically when you’re done.',
+        }),
+      );
       const r = await sendToBackground({ type: 'AUTH_START', providerId: PROVIDER_ID });
       if (!r.ok) errorText = `Could not connect: ${r.error}`;
     }

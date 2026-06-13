@@ -87,6 +87,11 @@ export type Response<T extends MessageType> = Schema[T]['res'];
 export type Broadcast =
   | { type: 'TASKS_UPDATED'; providerId: ProviderId; listId: ListId; tasks: Task[] }
   | { type: 'AUTH_REQUIRED'; providerId: ProviderId }
+  // Tokens appeared for a provider (OAuth completed). Sent by the
+  // background's provider-state watcher — NOT by the AUTH_START handler —
+  // so it also covers flows whose worker died mid-login and whose
+  // AUTH_START response channel was lost. Disconnects keep AUTH_REQUIRED.
+  | { type: 'AUTH_CHANGED'; providerId: ProviderId; authenticated: true }
   | { type: 'SETTINGS_CHANGED'; settings: Settings }
   | { type: 'LIST_CHANGED'; providerId: ProviderId; listId: ListId }
   | { type: 'GATE_CHANGED'; result: GateEvalResult };
@@ -131,6 +136,7 @@ function isBroadcast(v: unknown): v is Broadcast {
   return (
     t === 'TASKS_UPDATED' ||
     t === 'AUTH_REQUIRED' ||
+    t === 'AUTH_CHANGED' ||
     t === 'SETTINGS_CHANGED' ||
     t === 'LIST_CHANGED' ||
     t === 'GATE_CHANGED'

@@ -7,6 +7,8 @@ import {
   enrichWithTasks,
   registerHandlers,
   runRefresh,
+  wireAuthBroadcasts,
+  wireProviderAuth,
 } from '@/core/background/handlers';
 import { onRefreshAlarm, scheduleRefresh } from '@/core/background/refresh';
 import { evaluateGate, onGateAlarm, scheduleGateAlarm } from '@/core/gatekeeper/gatekeeper';
@@ -17,6 +19,11 @@ import { getSettings, onProviderStateChange, onSettingsChange } from '@/shared/s
 import type { SyncSettings } from '@/shared/types';
 
 export default defineBackground(() => {
+  // Synchronous on purpose: the OAuth redirect capture must be subscribed
+  // before any await, or a tabs.onUpdated event that wakes a dead worker
+  // can be dropped before the listener exists (same wart as the cold-
+  // worker message race documented in core/lifecycle.ts).
+  wireProviderAuth();
   void init();
 });
 
@@ -51,6 +58,7 @@ async function init(): Promise<void> {
 
   wireSettingsWatch();
   wireProviderWatch();
+  wireAuthBroadcasts();
 }
 
 // Re-schedule refresh / re-subscribe remote / broadcast on every settings change,

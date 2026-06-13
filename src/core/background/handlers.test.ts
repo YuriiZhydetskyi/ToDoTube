@@ -22,8 +22,15 @@ vi.mock('@/providers/registry', () => ({
   getProvider: () => currentProvider,
 }));
 
-import { listTasksForUi, registerHandlers } from './handlers';
+import { getSettings, setProviderState } from '@/shared/storage';
+import type { OAuthTokens } from '@/shared/types';
+
+import { listTasksForUi, registerHandlers, wireAuthBroadcasts } from './handlers';
 import { invalidateTaskCache } from './task-cache';
+
+function tokens(accessToken: string): OAuthTokens {
+  return { accessToken, expiresAt: Date.now() + 1_000_000 };
+}
 
 function task(id: string, extra: Partial<Task> = {}): Task {
   return { id, projectId: 'p', title: id, completed: false, ...extra };
@@ -333,5 +340,36 @@ describe('message dispatch', () => {
       });
       expect(r.ok).toBe(false);
     });
+  });
+});
+
+// The tokens-appeared watcher. broadcastToBlockedTabs (its sink) calls
+// tabs.query, so an AUTH_CHANGED broadcast is observable as a tabs.query
+// hit (fakeBrowser returns [] with no tabs seeded — we only observe). This
+// path is what recovers the UI when an OAuth flow outlived its worker and
+// no AUTH_START response ever came back.
+describe('wireAuthBroadcasts', () => {
+  it('broadcasts and adopts the provider when tokens first appear', async () => {
+    const querySpy = vi.spyOn(browser.tabs, 'query');
+    wireAuthBroadcasts();
+
+    await setProviderState('ticktick', { tokens: tokens('tok') });
+
+    await flushMacrotask();
+    expect(querySpy).toHaveBeenCalled();
+    // First connection becomes the active provider (same rule as AUTH_START).
+    expect((await getSettings()).activeProviderId).toBe('ticktick');
+  });
+
+  it('does not broadcast on a token refresh (tokens already present)', async () => {
+    // Seed tokens BEFORE wiring so the later write is present→present.
+    await setProviderState('ticktick', { tokens: tokens('old') });
+    const querySpy = vi.spyOn(browser.tabs, 'query');
+    wireAuthBroadcasts();
+
+    await setProviderState('ticktick', { tokens: tokens('new') });
+
+    await flushMacrotask();
+    expect(querySpy).not.toHaveBeenCalled();
   });
 });

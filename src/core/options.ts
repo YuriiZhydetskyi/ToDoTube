@@ -18,7 +18,8 @@ import { browser } from 'wxt/browser';
 import { AVAILABLE_GATES } from '@/gates/registry';
 import { SYNC_PROVIDERS } from '@/core/sync/registry';
 import { ANKI_HOST_PERMISSION } from '@/signals/anki/constants';
-import { getSettings, onSettingsChange } from '@/shared/storage';
+import { PROVIDER_IDS } from '@/shared/providers';
+import { getSettings, onProviderStateChange, onSettingsChange } from '@/shared/storage';
 import { ACTIVITY_BRIDGE_SETUP_URL, ANKI_SETUP_URL } from '@/shared/types';
 import { el } from '@/ui/options/dom';
 import {
@@ -145,4 +146,16 @@ export async function startOptions(root: HTMLElement): Promise<void> {
     settings = next;
     void renderAccountSection(accountSection, settings);
   });
+
+  // Token presence flipping (connect/disconnect) must refresh the Account
+  // section even when no setting changed — e.g. an OAuth flow that outlived
+  // its background worker persists tokens without an AUTH_START response
+  // ever reaching this page. renderGen in the section dedupes overlaps.
+  for (const providerId of PROVIDER_IDS) {
+    onProviderStateChange(providerId, (next, prev) => {
+      if (!!prev?.tokens !== !!next.tokens) {
+        void renderAccountSection(accountSection, settings);
+      }
+    });
+  }
 }

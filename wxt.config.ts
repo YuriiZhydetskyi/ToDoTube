@@ -27,7 +27,12 @@ export default defineConfig({
   manifest: {
     name: 'ToDoTube',
     description: 'Replace YouTube recommendations with your to-do list.',
-    permissions: ['storage', 'identity', 'alarms'],
+    // No `identity`: Firefox Android lacks the API entirely, so TickTick
+    // OAuth runs as a tab-based flow on every platform — the redirect is
+    // captured via tabs.onUpdated, whose URL visibility comes from the
+    // ticktick.com host permission below (the `tabs` permission is NOT
+    // needed for that). See src/providers/ticktick/oauth.ts.
+    permissions: ['storage', 'alarms'],
     // Blockable sites (YouTube, TikTok, Facebook, Threads, X, Instagram) come
     // from the single-sourced blocklist; TickTick's API hosts are appended.
     host_permissions: [
@@ -45,8 +50,8 @@ export default defineConfig({
     // pattern. Sync is off by default and nothing is sent anywhere until the user
     // opts in with their own endpoint. See docs/SYNC.md and docs/AMO-REVIEW.md.
     optional_host_permissions: [ANKI_HOST_PERMISSION, BRIDGE_HOST_PERMISSION, 'https://*/*'],
-    // Stable Firefox add-on ID so `browser.identity.getRedirectURL()`
-    // returns a stable URI we can register with TickTick.
+    // Stable Firefox add-on ID — required for AMO signing/updates and for
+    // `storage.sync` to address the same data across installs.
     browser_specific_settings: {
       gecko: {
         id: 'todotube@todotube.app',
@@ -57,9 +62,5 @@ export default defineConfig({
         },
       },
     },
-    // NOTE: For a stable Chrome extension ID (and therefore a stable OAuth
-    // redirect URI), set `key` here once you have a packed extension's
-    // public key. See README → "TickTick OAuth setup" for the procedure.
-    // key: '<base64-encoded public key>',
   },
 });

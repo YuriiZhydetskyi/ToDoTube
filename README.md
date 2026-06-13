@@ -44,10 +44,15 @@ Before the TickTick provider works end-to-end you must register a developer app:
 1. Go to https://developer.ticktick.com/manage and create a new app.
 2. Capture the `Client ID` and `Client Secret`.
 3. Copy `.env.example` to `.env` and paste them in.
-4. Register two redirect URIs in TickTick:
-   - **Chrome:** `https://<chrome-extension-id>.chromiumapp.org/`
-   - **Firefox:** `https://<addon-uuid>.extensions.allizom.org/`
-5. To get a **stable** Chrome extension ID, pack the extension once locally to generate a key, then add `manifest.key` to `wxt.config.ts`. Until then, the dev ID changes whenever you reload from a different path.
+4. Set the app's **OAuth redirect URL** to exactly:
+   `https://ticktick.com/todotube-oauth-callback`
+
+That single URL serves every platform (Chrome, Firefox desktop, Firefox
+Android). The extension doesn't use the `identity` API (Firefox Android has
+none): it opens the consent screen in a normal tab and captures the
+`?code=` redirect from the tab URL — the page itself 404s on ticktick.com,
+which is fine, the navigation is all that matters. No browser-specific
+extension IDs are involved, so no `manifest.key` / stable-ID dance is needed.
 
 > **Public-client note.** TickTick does not document PKCE support, so the
 > classic client-secret OAuth flow is required. The secret ships inside the

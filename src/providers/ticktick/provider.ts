@@ -12,7 +12,12 @@ import { isSynthetic, type ListId, type Project, type Task } from '@/shared/type
 
 import type { ListTasksOpts, Provider } from '../types';
 import * as api from './api';
-import { authorize, disconnect as oauthDisconnect, getValidTokens } from './oauth';
+import {
+  authorize,
+  disconnect as oauthDisconnect,
+  getValidTokens,
+  wireOAuthCapture,
+} from './oauth';
 
 export const tickTickProvider: Provider = {
   id: 'ticktick',
@@ -23,6 +28,9 @@ export const tickTickProvider: Provider = {
     if (!r.ok) return err(r.error);
     return ok({ authenticated: true });
   },
+
+  // OAuth redirect capture — must be wired synchronously on worker wake.
+  wireBackground: wireOAuthCapture,
 
   async isAuthenticated() {
     const r = await getValidTokens();

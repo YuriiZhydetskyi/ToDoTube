@@ -243,6 +243,18 @@ function applyAuthRequired(state: State, msg: Extract<Broadcast, { type: 'AUTH_R
   }
 }
 
+// Tokens appeared (OAuth completed). On the happy path onConnectClick's
+// AUTH_START response already handled this — the authenticated guard makes
+// the duplicate a no-op. The broadcast matters when the background worker
+// died mid-login and the AUTH_START response channel was lost: this is the
+// only signal that flips the panel out of its stale loading/error state.
+function applyAuthChanged(state: State, msg: Extract<Broadcast, { type: 'AUTH_CHANGED' }>): void {
+  if (msg.providerId !== state.providerId || state.authenticated) return;
+  state.authenticated = true;
+  void loadProjects(state);
+  void fetchTasks(state);
+}
+
 // Dispatch table for background broadcasts. The mapped type makes a missing or
 // extra key a compile error, so a new Broadcast variant must be handled here.
 const broadcastHandlers: {
@@ -252,6 +264,7 @@ const broadcastHandlers: {
   LIST_CHANGED: applyListChanged,
   TASKS_UPDATED: applyTasksUpdated,
   AUTH_REQUIRED: applyAuthRequired,
+  AUTH_CHANGED: applyAuthChanged,
   GATE_CHANGED: (state, msg) => applyGate(state, msg.result),
 };
 
