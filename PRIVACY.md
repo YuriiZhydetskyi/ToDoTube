@@ -1,13 +1,16 @@
 # Privacy Policy
 
-_Last updated: 2026-05-19_
+_Last updated: 2026-06-14_
 
 ## TL;DR
 
 ToDoTube collects nothing. No analytics, no crash reports, no "anonymous
-metrics", no background pings. The only network requests the extension
-makes are to YouTube (DOM only, no API calls) and to TickTick (so you
-can see and complete your own tasks).
+metrics", no background pings, and no maintainer-run server — ever. By
+default the only network requests the extension makes are to YouTube (DOM
+only, no API calls) and to TickTick (so you can see and complete your own
+tasks). Two opt-in Focus-mode features can add network access, and only
+to destinations you control — local apps on your own machine, or a sync
+backend you host yourself (see "Optional multi-device sync" below).
 
 ## What is not collected
 
@@ -24,9 +27,8 @@ see what you have installed, what you are doing, or that you exist.
 
 ## What is stored locally
 
-The extension uses `browser.storage.local` only — data never syncs
-across browsers or devices unless you manually export it from the
-Advanced settings tab. Three things are stored:
+By default the extension uses `browser.storage.local` only — nothing
+leaves your device. The following is stored:
 
 - **TickTick OAuth tokens** (access token, optional refresh token,
   expiry). These let the extension talk to TickTick on your behalf
@@ -36,14 +38,38 @@ Advanced settings tab. Three things are stored:
 - **UI preferences** — master on/off, theme, sort order, refresh
   interval, debug toggles, and any selector overrides you have
   authored.
+- **Focus-mode usage data** (only if you enable Focus mode) — your
+  daily viewing-time budget and the per-day intervals of time spent on
+  blocked sites, used to compute how much time you have left.
 
 You can wipe all of this at any time from the Settings page
 ("Disconnect / forget my tokens"), or by uninstalling the extension.
 
+## Optional multi-device sync
+
+Focus mode has an optional setting to share your daily viewing-time
+budget across your own devices (for example, desktop and phone), so the
+same limit applies everywhere. It is **off by default**. When you turn
+it on, you pick the transport:
+
+- **Browser sync** — uses `browser.storage.sync`, i.e. the sync your
+  browser vendor already provides. No third party beyond that; works
+  desktop-to-desktop within the same browser only.
+- **Self-hosted backend** — you point the extension at a small backend
+  you run yourself (ready-made templates for Supabase, Cloudflare
+  Workers, and Upstash live in the repository). The extension then
+  reads and writes the budget against the single origin you entered.
+
+Only the budget data is synced — per-device, per-day intervals of time
+spent on blocked sites. Your tasks, tokens, and browsing are never
+synced. ToDoTube ships no default endpoint and the author runs no
+server: nothing is sent anywhere until you opt in and supply your own
+endpoint.
+
 ## Third-party services
 
-ToDoTube contacts exactly two domains. You can verify this yourself by
-grepping the source: `rg -n 'fetch\(|XMLHttpRequest|WebSocket' src/`.
+By default, ToDoTube contacts exactly two domains. You can verify this
+yourself by grepping the source: `rg -n 'fetch\(|XMLHttpRequest|WebSocket' src/`.
 
 - **TickTick** (`ticktick.com`, `api.ticktick.com`) — the extension
   authenticates against TickTick's OAuth endpoint and then calls
@@ -55,9 +81,21 @@ grepping the source: `rg -n 'fetch\(|XMLHttpRequest|WebSocket' src/`.
   recommendation rail's location so it can replace it with your task
   list. Nothing from the page leaves your machine.
 
-No other domain is contacted, ever. The extension declares only the
-host permissions listed above in its manifest; the browser would block
-any other request.
+Beyond these two defaults, the extension reaches the network only when
+you turn on a matching optional feature:
+
+- **Local Focus-mode signals** — if you enable the Anki or activity
+  unlock condition, the extension reads a value from a server on your
+  own machine (`127.0.0.1`). Local only; it never leaves your computer.
+- **Your own sync backend** — if you enable self-hosted multi-device
+  sync, the extension contacts the endpoint you configured (see
+  "Optional multi-device sync" above). That destination is yours, not
+  the author's.
+
+Apart from these, no other domain is contacted, ever. Optional host
+permissions are requested at runtime only when you enable the
+corresponding feature, and the browser blocks anything the manifest
+does not declare.
 
 ## Tracking
 
