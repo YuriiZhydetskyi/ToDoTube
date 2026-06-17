@@ -39,14 +39,20 @@ export function renderSyncSection(
   container.append(el('h2', { class: 'tt-card__title', text: 'Sync' }));
 
   const sync = settings.sync ?? DEFAULT_SYNC;
+  // One coherent, mutable copy of the sync settings for this render. Every
+  // persist writes the WHOLE object from `live`, so no single field write can
+  // ship a stale value for another field — a config-field edit can't blank the
+  // syncId, and Generate can't blank the config. (Coupled with the serialized
+  // setSettings, this is what makes the "Sync code" actually stick.)
+  const live: SyncSettings = { ...sync, config: { ...sync.config } };
 
   const reRender = (next: SyncSettings): void =>
     renderSyncSection(container, { ...settings, sync: next }, providers, deps);
 
   const persist = (patch: Partial<SyncSettings>): SyncSettings => {
-    const next = { ...sync, ...patch };
-    void setSettings({ sync: next });
-    return next;
+    Object.assign(live, patch);
+    void setSettings({ sync: { ...live, config: { ...live.config } } });
+    return live;
   };
 
   container.append(
@@ -60,24 +66,30 @@ export function renderSyncSection(
     row(
       'Sync via',
       enumSelect(
-        sync.mode,
+        live.mode,
         providers.map((p) => [p.id, p.displayName] as const),
         (v) => reRender(persist({ mode: v as SyncSettings['mode'] })),
       ),
     ),
   );
 
-  const active = providers.find((p) => p.id === sync.mode);
+  const active = providers.find((p) => p.id === live.mode);
   if (active) container.append(el('p', { class: 'tt-row__help', text: active.description }));
 
   // 'off' needs nothing more; 'browser' is zero-config (it just works when the
   // browser account sync is on). Only the HTTP backends need connection details.
-  if (!active || sync.mode === 'off' || sync.mode === 'browser') return;
+  if (!active || live.mode === 'off' || live.mode === 'browser') return;
 
   // Shared secret that links this user's devices (and isolates them from other
   // users' rows). The same value must be set on every device.
-  const idInput = textInput(sync.syncId, 'shared code — same on every device', (v) =>
-    persist({ syncId: v }),
+  const idInput = textInput(
+    live.syncId,
+    'shared code — same on every device',
+    (v) => persist({ syncId: v }),
+    // `live`: persist while typing/pasting so the code is saved even if the
+    // field is never blurred (paste-and-leave, common on mobile). Safe here —
+    // editing the syncId doesn't reRender, so focus isn't stolen.
+    { live: true },
   );
   const genBtn = el('button', { text: 'Generate', class: 'tt-btn tt-btn--secondary' });
   genBtn.addEventListener('click', () => reRender(persist({ syncId: crypto.randomUUID() })));
@@ -101,19 +113,19 @@ export function renderSyncSection(
   );
 
   // Backend connection fields, rendered generically from the provider schema.
-  const cfg = sync.config[sync.mode] ?? {};
-  // Live copy of the active mode's config, updated as fields change so the
-  // setup block can read the current backend URL without a re-render.
-  let liveCfg: GateConfig = cfg;
+  // Read and write the active mode's config through `live` so it never desyncs
+  // from the syncId; the setup block reads the current URL straight off `live`
+  // (no re-render, so input focus is preserved).
+  const cfg = live.config[live.mode] ?? {};
   const setCfg = (patch: GateConfig): void => {
-    liveCfg = { ...liveCfg, ...patch };
-    persist({ config: { ...sync.config, [sync.mode]: liveCfg } });
+    const merged = { ...(live.config[live.mode] ?? {}), ...patch };
+    persist({ config: { ...live.config, [live.mode]: merged } });
   };
   for (const field of active.configSchema) {
-    container.append(renderConfigField(field, cfg, setCfg));
+    container.append(renderConfigField(field, cfg, setCfg, { live: true }));
   }
 
-  if (deps) container.append(renderSyncSetup(deps, () => liveCfg));
+  if (deps) container.append(renderSyncSetup(deps, () => live.config[live.mode] ?? {}));
 }
 
 // Backend permission + connection-test block for the HTTP sync modes. The host

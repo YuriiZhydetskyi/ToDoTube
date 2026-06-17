@@ -24,6 +24,25 @@ import {
   type Settings,
 } from './types';
 
+// Serialize read-modify-write per storage item so concurrent fire-and-forget
+// updates in the SAME JS context can't interleave and drop a just-written
+// field. Keyed by the WxtStorageItem identity. Only serializes within one JS
+// context — cross-context races (options page vs background) remain, but the
+// background never writes settings during sync editing, so the symptom this
+// guards against (rapid same-context options-page writes losing a field, e.g.
+// the just-generated sync code) is fully covered.
+const writeQueues = new WeakMap<object, Promise<unknown>>();
+
+function serialize<T>(item: object, op: () => Promise<T>): Promise<T> {
+  const prev = writeQueues.get(item) ?? Promise.resolve();
+  const next = prev.then(op, op); // run op regardless of the prior outcome
+  writeQueues.set(
+    item,
+    next.catch(() => undefined),
+  ); // isolate one op's failure from the next queued op
+  return next;
+}
+
 const settingsItem: WxtStorageItem<
   Settings,
   Record<string, unknown>
@@ -47,8 +66,10 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function setSettings(partial: Partial<Settings>): Promise<void> {
-  const current = await settingsItem.getValue();
-  await settingsItem.setValue({ ...current, ...partial });
+  await serialize(settingsItem, async () => {
+    const current = await settingsItem.getValue();
+    await settingsItem.setValue({ ...current, ...partial });
+  });
 }
 
 export async function getProviderState(id: ProviderId): Promise<ProviderState> {
@@ -60,8 +81,10 @@ export async function setProviderState(
   state: Partial<ProviderState>,
 ): Promise<void> {
   const item = providerItem(id);
-  const current = await item.getValue();
-  await item.setValue({ ...current, ...state });
+  await serialize(item, async () => {
+    const current = await item.getValue();
+    await item.setValue({ ...current, ...state });
+  });
 }
 
 export async function clearProviderState(id: ProviderId): Promise<void> {
@@ -250,6 +273,8 @@ export async function getSyncMeta(): Promise<SyncMeta> {
 }
 
 export async function setSyncMeta(partial: Partial<SyncMeta>): Promise<void> {
-  const current = await syncMetaItem.getValue();
-  await syncMetaItem.setValue({ ...current, ...partial });
+  await serialize(syncMetaItem, async () => {
+    const current = await syncMetaItem.getValue();
+    await syncMetaItem.setValue({ ...current, ...partial });
+  });
 }

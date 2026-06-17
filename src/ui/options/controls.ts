@@ -38,10 +38,18 @@ export function numberInput(
   return input;
 }
 
+// Debounce for `live` text inputs: long enough to coalesce a burst of
+// keystrokes / a paste into ~one write, short enough that a value is saved even
+// if the user leaves (closes the page / switches app) without blurring the
+// field — the blur-only `change` event never fires in that case, notably on
+// mobile. See the sync section's "Sync code" field.
+const LIVE_PERSIST_DEBOUNCE_MS = 600;
+
 export function textInput(
   initial: string,
   placeholder: string,
   onChange: (v: string) => void,
+  opts?: { live?: boolean; debounceMs?: number },
 ): HTMLInputElement {
   const input = el('input', {
     type: 'text',
@@ -49,7 +57,20 @@ export function textInput(
     placeholder,
   }) as HTMLInputElement;
   input.value = initial;
+  // `change` fires on blur — keep it so a blur flushes immediately, even
+  // mid-debounce.
   input.addEventListener('change', () => onChange(input.value.trim()));
+  // `live` additionally persists while typing (debounced), so a value that is
+  // never blurred (paste-and-leave) is still saved. Only safe for fields whose
+  // onChange does NOT trigger a re-render (which would steal input focus).
+  if (opts?.live) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const v = input.value.trim();
+      timer = setTimeout(() => onChange(v), opts.debounceMs ?? LIVE_PERSIST_DEBOUNCE_MS);
+    });
+  }
   return input;
 }
 
@@ -94,6 +115,9 @@ export function renderConfigField(
   field: GateConfigField,
   cfg: GateConfig,
   setCfg: (patch: GateConfig) => void,
+  // `live` persists text fields while typing (see textInput) — the sync section
+  // passes it for its backend fields; gate config leaves it off (blur-only).
+  opts?: { live?: boolean },
 ): HTMLElement {
   if (field.kind === 'number') {
     return row(
@@ -112,7 +136,7 @@ export function renderConfigField(
     const value = typeof cfg[field.key] === 'string' ? (cfg[field.key] as string) : field.default;
     return row(
       field.label,
-      textInput(value, field.placeholder ?? '', (v) => setCfg({ [field.key]: v })),
+      textInput(value, field.placeholder ?? '', (v) => setCfg({ [field.key]: v }), opts),
       field.help,
     );
   }

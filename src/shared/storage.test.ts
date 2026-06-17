@@ -10,7 +10,7 @@ import {
   setProviderState,
   setSettings,
 } from './storage';
-import { DEFAULT_SETTINGS } from './types';
+import { DEFAULT_SETTINGS, DEFAULT_SYNC } from './types';
 
 beforeEach(() => {
   fakeBrowser.reset();
@@ -40,6 +40,19 @@ describe('setSettings', () => {
     expect(result.refreshIntervalMin).toBe(1);
     expect(result.debugOverlay).toBe(true);
   });
+
+  it('concurrent partial updates do not clobber each other (lost-update guard)', async () => {
+    // Fire both WITHOUT awaiting the first — the options Sync section does
+    // exactly this (Generate + a field blur). A naive read-modify-write loses
+    // one update; the serialized writer must keep both.
+    const a = setSettings({ refreshIntervalMin: 15 });
+    const b = setSettings({ sync: { ...DEFAULT_SYNC, mode: 'supabase', syncId: 'abc' } });
+    await Promise.all([a, b]);
+    const result = await getSettings();
+    expect(result.refreshIntervalMin).toBe(15);
+    expect(result.sync.syncId).toBe('abc');
+    expect(result.sync.mode).toBe('supabase');
+  });
 });
 
 describe('provider state', () => {
@@ -63,6 +76,15 @@ describe('provider state', () => {
     });
     await clearProviderState('ticktick');
     expect(await getProviderState('ticktick')).toEqual({});
+  });
+
+  it('concurrent partial updates to the same provider do not clobber (lost-update guard)', async () => {
+    const a = setProviderState('ticktick', { lastSyncAt: 123 });
+    const b = setProviderState('ticktick', { activeListId: 'list-1' });
+    await Promise.all([a, b]);
+    const state = await getProviderState('ticktick');
+    expect(state.lastSyncAt).toBe(123);
+    expect(state.activeListId).toBe('list-1');
   });
 });
 
