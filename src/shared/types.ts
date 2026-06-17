@@ -181,6 +181,10 @@ export type GateEvalResult =
 
 export type GatingScope = 'site' | 'watch';
 
+// Which corner the on-site budget timer floats in. Tapping the timer flips it;
+// the choice is remembered (persisted below).
+export type TimerCorner = 'left' | 'right';
+
 export interface GatingSettings {
   enabled: boolean;
   // Decision 2026-05-29: default to blocking the whole site. `watch` is
@@ -193,6 +197,13 @@ export interface GatingSettings {
   // A stored config missing this field is normalised to "all sites" by
   // `normalizeBlockedSiteIds` (older installs predate the multi-site list).
   blockedSiteIds: string[];
+  // Show a small floating countdown of the remaining daily budget on blocked
+  // sites while access is still allowed. Read defensively (`?? true`) — older
+  // installs stored `gating` before this field existed.
+  showBudgetTimer: boolean;
+  // Last corner the user moved that timer to (remembered across visits). Read
+  // defensively (`?? 'right'`), same reason.
+  budgetTimerCorner: TimerCorner;
 }
 
 export const DEFAULT_GATING: GatingSettings = {
@@ -201,6 +212,8 @@ export const DEFAULT_GATING: GatingSettings = {
   activeGateId: null,
   gateConfigs: {},
   blockedSiteIds: BLOCKED_SITE_IDS,
+  showBudgetTimer: true,
+  budgetTimerCorner: 'right',
 };
 
 // Read `blockedSiteIds` defensively: installs that stored `gating` before the

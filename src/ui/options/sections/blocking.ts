@@ -123,6 +123,14 @@ export function renderFocusSection(
 
   if (!gating.enabled) return;
 
+  container.append(
+    row(
+      'Show a countdown timer on blocked sites',
+      checkbox(gating.showBudgetTimer ?? true, (v) => persist({ showBudgetTimer: v })),
+      'A small floating clock shows the time left while a site is still allowed. Tap it to switch corners, double-tap to hide it until your next visit.',
+    ),
+  );
+
   if (gates.length > 1) {
     container.append(
       row(

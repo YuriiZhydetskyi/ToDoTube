@@ -1,0 +1,59 @@
+/* Floating budget-timer styles. Rendered inside a shadow root whose host is a
+ * full-viewport, click-through layer attached to <html>; the pill itself
+ * re-enables pointer events. Runs on every blocked site (tiktok/facebook/…),
+ * none of which expose YouTube's `--yt-spec-*` vars — so, like block-screen.css,
+ * this is plain self-contained CSS with literal colors (brand teal #1f9e8b). */
+
+.tt-timer {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top, 0px));
+  pointer-events: auto;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: rgba(15, 15, 15, 0.82);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  font-family:
+    'Roboto',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Suppresses the mobile double-tap-zoom (and the synthetic-click delay) so a
+   * double-tap reaches our dismiss handler instead of zooming the page. */
+  touch-action: manipulation;
+}
+
+.tt-timer--right {
+  right: max(10px, env(safe-area-inset-right, 0px));
+}
+
+.tt-timer--left {
+  left: max(10px, env(safe-area-inset-left, 0px));
+}
+
+/* Brand mark — keeps the pill recognisably ToDoTube's. */
+.tt-timer__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1f9e8b;
+}
+
+.tt-timer__value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}

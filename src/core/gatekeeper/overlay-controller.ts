@@ -19,12 +19,28 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
 import { isActiveTab } from '@/shared/active-tab';
 import { type BlockedSiteDef, siteForHostname } from '@/shared/blocklist';
+import { remainingBudgetMs } from '@/shared/budget';
 import { log, setVerbose } from '@/shared/logger';
 import { readPlayingMedia } from '@/shared/media';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
-import { getSettings, onSettingsChange } from '@/shared/storage';
-import { type GateEvalResult, normalizeBlockedSiteIds, type RequirementView } from '@/shared/types';
+import { getSettings, onSettingsChange, setSettings } from '@/shared/storage';
+import {
+  DEFAULT_GATING,
+  type GateEvalResult,
+  normalizeBlockedSiteIds,
+  type RequirementView,
+  type Settings,
+  type TimerCorner,
+} from '@/shared/types';
 import { mountBlockOverlay, type OverlayHandle } from '@/surfaces/youtube-site/overlay';
+import { mountBudgetTimer, type TimerHandle } from '@/surfaces/youtube-site/timer';
+import {
+  budgetTimerCss,
+  otherCorner,
+  renderBudgetTimer,
+  setTimerCorner,
+  setTimerValue,
+} from '@/ui/budget-timer';
 import { blockScreenCss, renderBlockScreen, type BlockScreenCallbacks } from '@/ui/block-screen';
 
 import { type MediaAccrualState, stepAccrual, stepMediaAccrual, USAGE_TICK_MS } from './accrual';
@@ -65,6 +81,19 @@ interface State {
   // re-broadcasts an unchanged decision; skipping the re-render preserves
   // any in-flight task-button state (e.g. a row mid-completion).
   lastSig: string | null;
+  // --- Floating budget timer (the allowed-state counterpart of the overlay) ---
+  // The mounted widget, or null when it isn't shown.
+  timer: TimerHandle | null;
+  // Last known remaining budget (ms), or null when the active gate carries no
+  // budget figures. Ticked down locally each second between reconciliations.
+  budgetMsLeft: number | null;
+  // Corner the timer floats in (from settings; flipped by a tap).
+  timerCorner: TimerCorner;
+  // Whether the user double-tapped to hide it this visit. In-memory only, so it
+  // resets on the next page load = "until the next visit".
+  timerDismissed: boolean;
+  // Whether the timer is enabled in settings.
+  showBudgetTimer: boolean;
 }
 
 export function startGateOverlay(ctx: ContentScriptContext): void {
@@ -88,6 +117,11 @@ export function startGateOverlay(ctx: ContentScriptContext): void {
     media: { lastCt: null, lastWall: null },
     mediaEl: null,
     lastSig: null,
+    timer: null,
+    budgetMsLeft: null,
+    timerCorner: 'right',
+    timerDismissed: false,
+    showBudgetTimer: true,
   };
 
   void start(state);
@@ -98,6 +132,10 @@ export function startGateOverlay(ctx: ContentScriptContext): void {
   // Toggling this site on/off in settings takes effect live.
   const offSettings = onSettingsChange((next) => {
     setVerbose(next.verboseLogging);
+    // Timer enable/corner changes (incl. a corner flip echoed from another tab)
+    // apply live without a fresh GATE_EVAL.
+    applyTimerSettings(state, next);
+    syncTimer(state);
     void refreshParticipation(state);
   });
 
@@ -115,11 +153,16 @@ export function startGateOverlay(ctx: ContentScriptContext): void {
   ctx.addEventListener(window, 'pagehide', () => pump(state));
   ctx.addEventListener(window, 'pageshow', () => pump(state));
 
+  // Smooth per-second countdown for the floating timer between the background's
+  // ~1-minute GATE_CHANGED reconciliations (mirrors lifecycle's tickBudget).
+  ctx.setInterval(() => tickTimer(state), 1000);
+
   ctx.onInvalidated(() => {
     offBroadcast();
     offSettings();
     state.relockToken++;
     removeOverlay(state);
+    removeTimer(state);
   });
 }
 
@@ -130,7 +173,9 @@ async function isParticipating(site: BlockedSiteDef): Promise<boolean> {
 }
 
 async function start(state: State): Promise<void> {
-  setVerbose((await getSettings()).verboseLogging);
+  const settings = await getSettings();
+  setVerbose(settings.verboseLogging);
+  applyTimerSettings(state, settings);
   state.participating = await isParticipating(state.site);
   if (state.participating) await init(state);
 }
@@ -152,6 +197,7 @@ async function refreshParticipation(state: State): Promise<void> {
   pump(state);
   state.relockToken++;
   removeOverlay(state);
+  removeTimer(state);
 }
 
 async function init(state: State): Promise<void> {
@@ -224,6 +270,11 @@ function apply(state: State, result: GateEvalResult): void {
   // Flush the tail if access just ended; open a window if it just began.
   pump(state);
 
+  // Re-sync the budget timer against the authoritative figures (resets any
+  // local per-second drift accumulated since the last reconciliation).
+  state.budgetMsLeft = remainingBudgetMs(result);
+  syncTimer(state);
+
   if (!result.gating || result.decision.allowed) {
     removeOverlay(state);
     if (result.gating && result.decision.allowedUntil) {
@@ -264,6 +315,99 @@ function removeOverlay(state: State): void {
     }
     state.overlay = null;
   }
+}
+
+// --- Floating budget timer ------------------------------------------------
+//
+// The timer is the allowed-state counterpart of the block overlay: shown while
+// access is still allowed and there's budget left to count down, hidden once
+// the site is blocked (the overlay takes over) or the user dismisses it. So the
+// two are mutually exclusive.
+
+// Read the user's timer preferences off a Settings snapshot. Merged onto
+// DEFAULT_GATING so installs that stored `gating` before these fields existed
+// fall back cleanly (same defensiveness as normalizeBlockedSiteIds).
+function applyTimerSettings(state: State, settings: Settings): void {
+  const gating = { ...DEFAULT_GATING, ...settings.gating };
+  state.showBudgetTimer = gating.showBudgetTimer;
+  state.timerCorner = gating.budgetTimerCorner;
+}
+
+function timerVisible(state: State): boolean {
+  return (
+    state.showBudgetTimer &&
+    state.participating &&
+    state.allowed &&
+    !state.timerDismissed &&
+    state.budgetMsLeft !== null &&
+    state.budgetMsLeft > 0
+  );
+}
+
+// Mount / update / unmount the timer to match the current state.
+function syncTimer(state: State): void {
+  if (!timerVisible(state)) {
+    removeTimer(state);
+    return;
+  }
+  const view = { msLeft: state.budgetMsLeft ?? 0, corner: state.timerCorner };
+  if (!state.timer) {
+    state.timer = mountBudgetTimer({ cssText: budgetTimerCss });
+    renderBudgetTimer(state.timer.root, view, {
+      onToggleCorner: () => toggleTimerCorner(state),
+      onDismiss: () => dismissTimer(state),
+    });
+    return;
+  }
+  // Already mounted — surgically refresh value + corner so the tap handler
+  // stays attached (no full re-render).
+  setTimerValue(state.timer.root, view.msLeft);
+  setTimerCorner(state.timer.root, view.corner);
+}
+
+function removeTimer(state: State): void {
+  if (state.timer) {
+    try {
+      state.timer.unmount();
+    } catch (err) {
+      log.warn('budget timer cleanup:', err);
+    }
+    state.timer = null;
+  }
+}
+
+// Local 1-second countdown. Only ticks while actively accruing (allowed +
+// active tab), matching the wall-clock side of pump(); the authoritative value
+// reconciles on the next GATE_CHANGED.
+function tickTimer(state: State): void {
+  if (!state.timer || state.budgetMsLeft === null) return;
+  if (!state.allowed || !isActiveTab()) return;
+  state.budgetMsLeft = Math.max(0, state.budgetMsLeft - 1000);
+  if (state.budgetMsLeft <= 0) {
+    // Out of budget — hide; the background's re-lock raises the overlay shortly.
+    syncTimer(state);
+    return;
+  }
+  setTimerValue(state.timer.root, state.budgetMsLeft);
+}
+
+// Single tap: move to the other corner and remember it (across visits + tabs).
+function toggleTimerCorner(state: State): void {
+  state.timerCorner = otherCorner(state.timerCorner);
+  if (state.timer) setTimerCorner(state.timer.root, state.timerCorner);
+  void persistTimerCorner(state.timerCorner);
+}
+
+// Double tap: hide until the next visit (in-memory, so a reload brings it back).
+function dismissTimer(state: State): void {
+  state.timerDismissed = true;
+  removeTimer(state);
+}
+
+async function persistTimerCorner(corner: TimerCorner): Promise<void> {
+  const current = await getSettings();
+  const gating = { ...DEFAULT_GATING, ...current.gating };
+  await setSettings({ gating: { ...gating, budgetTimerCorner: corner } });
 }
 
 // When a session is granted, re-evaluate right after it expires so the
