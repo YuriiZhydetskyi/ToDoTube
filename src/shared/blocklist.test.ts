@@ -49,6 +49,17 @@ describe('siteForHostname', () => {
     expect(siteForHostname('studio.youtube.com')?.id).toBe('youtube');
   });
 
+  it('excludes business.facebook.com so Meta Business Suite stays usable', () => {
+    expect(siteForHostname('business.facebook.com')).toBeNull();
+    // Same exclude-before-match + case-folding contract as YouTube Music.
+    expect(siteForHostname('Business.Facebook.COM')).toBeNull();
+    // A deeper subdomain under the excluded host stays excluded.
+    expect(siteForHostname('foo.business.facebook.com')).toBeNull();
+    // But plain Facebook (apex + other subdomains) is still blocked.
+    expect(siteForHostname('facebook.com')?.id).toBe('facebook');
+    expect(siteForHostname('web.facebook.com')?.id).toBe('facebook');
+  });
+
   it('returns null for hosts that only look like a blocked site', () => {
     expect(siteForHostname('notyoutube.com')).toBeNull();
     expect(siteForHostname('max.com')).toBeNull(); // must not match the bare "x.com" rule
@@ -85,8 +96,11 @@ describe('match-pattern exports', () => {
     expect(new Set(BLOCKED_SITE_MATCHES).size).toBe(BLOCKED_SITE_MATCHES.length);
   });
 
-  it('carves out YouTube Music in the exclude patterns', () => {
-    expect(BLOCKED_SITE_EXCLUDE_MATCHES).toEqual(['*://music.youtube.com/*']);
+  it('carves out the per-site exclusions in the exclude patterns', () => {
+    expect(BLOCKED_SITE_EXCLUDE_MATCHES).toEqual([
+      '*://*.music.youtube.com/*',
+      '*://*.business.facebook.com/*',
+    ]);
   });
 
   it('exposes one id per known site', () => {
