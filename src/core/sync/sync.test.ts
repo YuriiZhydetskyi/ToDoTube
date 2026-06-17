@@ -52,6 +52,25 @@ describe('cross-device union (browser sync)', () => {
   });
 });
 
+describe('recordUsage day boundary', () => {
+  it('splits a delta that straddles local midnight across two day keys', async () => {
+    const justAfterMidnight = new Date(2026, 4, 29, 0, 5, 0).getTime();
+    await recordUsage(justAfterMidnight, 10 * MIN); // [23:55 May 28, 00:05 May 29]
+
+    const today = new Date(2026, 4, 29, 12, 0, 0).getTime();
+    const yesterday = new Date(2026, 4, 28, 12, 0, 0).getTime();
+    expect(await getSpentTodayMs(today)).toBe(5 * MIN); // 00:00–00:05
+    expect(await getSpentTodayMs(yesterday)).toBe(5 * MIN); // 23:55–00:00
+  });
+
+  it('keeps a within-day delta as a single same-day interval', async () => {
+    await recordUsage(NOW, 3 * MIN);
+    const yesterday = new Date(2026, 4, 28, 12, 0, 0).getTime();
+    expect(await getSpentTodayMs(NOW)).toBe(3 * MIN);
+    expect(await getSpentTodayMs(yesterday)).toBe(0);
+  });
+});
+
 describe('migrateLegacyUsage', () => {
   it('seeds today as one interval of the old length, then clears the legacy key', async () => {
     await storage.setItem('local:todotube:usage', { day: DAY, ms: 90_000 });

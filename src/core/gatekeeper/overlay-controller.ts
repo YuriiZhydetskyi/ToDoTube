@@ -19,14 +19,15 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
 import { isActiveTab } from '@/shared/active-tab';
 import { type BlockedSiteDef, siteForHostname } from '@/shared/blocklist';
-import { log } from '@/shared/logger';
+import { log, setVerbose } from '@/shared/logger';
+import { readPlayingMedia } from '@/shared/media';
 import { onBroadcast, sendToBackground } from '@/shared/messaging';
 import { getSettings, onSettingsChange } from '@/shared/storage';
 import { type GateEvalResult, normalizeBlockedSiteIds, type RequirementView } from '@/shared/types';
 import { mountBlockOverlay, type OverlayHandle } from '@/surfaces/youtube-site/overlay';
 import { blockScreenCss, renderBlockScreen, type BlockScreenCallbacks } from '@/ui/block-screen';
 
-import { stepAccrual, USAGE_TICK_MS } from './accrual';
+import { type MediaAccrualState, stepAccrual, stepMediaAccrual, USAGE_TICK_MS } from './accrual';
 
 // A cold MV3 service worker can miss the very first message after startup,
 // so we retry the initial GATE_EVAL a few times (same pattern as lifecycle).
@@ -49,10 +50,17 @@ interface State {
   // True only when gating is on AND access is currently allowed — gates
   // it whether we accrue screen time.
   allowed: boolean;
-  // Open accrual window: the timestamp screen time has been reported up to,
-  // or null when no window is open (tab hidden/unfocused/blocked). Driven
-  // by the pure reducer in accrual.ts.
+  // Open wall-clock accrual window (the active-tab stopwatch): the timestamp
+  // screen time has been reported up to, or null when no window is open (tab
+  // hidden/unfocused/blocked). Driven by stepAccrual in accrual.ts.
   lastAt: number | null;
+  // Open media-playback accrual window (the inactive-tab stopwatch): tracks how
+  // far an audible media element has played while the tab is backgrounded. Driven
+  // by stepMediaAccrual; closed = { lastCt: null, lastWall: null }.
+  media: MediaAccrualState;
+  // The media element the media window is measuring, so a swapped element (SPA
+  // navigation / new video) resets the baseline instead of being read as a jump.
+  mediaEl: HTMLMediaElement | null;
   // Signature of the last-rendered requirement. The 1-minute gate alarm
   // re-broadcasts an unchanged decision; skipping the re-render preserves
   // any in-flight task-button state (e.g. a row mid-completion).
@@ -77,6 +85,8 @@ export function startGateOverlay(ctx: ContentScriptContext): void {
     relockToken: 0,
     allowed: false,
     lastAt: null,
+    media: { lastCt: null, lastWall: null },
+    mediaEl: null,
     lastSig: null,
   };
 
@@ -86,13 +96,18 @@ export function startGateOverlay(ctx: ContentScriptContext): void {
     if (msg.type === 'GATE_CHANGED' && state.participating) apply(state, msg.result);
   });
   // Toggling this site on/off in settings takes effect live.
-  const offSettings = onSettingsChange(() => void refreshParticipation(state));
+  const offSettings = onSettingsChange((next) => {
+    setVerbose(next.verboseLogging);
+    void refreshParticipation(state);
+  });
 
-  // Report screen time while this tab is the active, focused, allowed blocked
-  // tab. The interval is just the reporting cadence; pump() emits the real
-  // elapsed time. Flushing on visibility/focus/pagehide changes (below) makes
-  // sure a partial interval before a reload or tab-switch isn't lost; pageshow
-  // reopens the window when the tab is restored from the bfcache.
+  // Report budget time: active-tab wall-clock plus inactive-tab media playback
+  // (see pump()). The interval is just the reporting cadence; pump() emits the
+  // real elapsed time. Flushing on visibility/focus/pagehide changes (below)
+  // ensures a partial interval before a reload or tab-switch isn't lost AND is the
+  // reconcile-on-resume for mobile: while backgrounded the interval is throttled
+  // or frozen, so the visibility/focus/pageshow pump on return flushes the media
+  // time that played in between. pageshow also reopens after a bfcache restore.
   ctx.setInterval(() => pump(state), USAGE_TICK_MS);
   ctx.addEventListener(document, 'visibilitychange', () => pump(state));
   ctx.addEventListener(window, 'blur', () => pump(state));
@@ -115,6 +130,7 @@ async function isParticipating(site: BlockedSiteDef): Promise<boolean> {
 }
 
 async function start(state: State): Promise<void> {
+  setVerbose((await getSettings()).verboseLogging);
   state.participating = await isParticipating(state.site);
   if (state.participating) await init(state);
 }
@@ -153,16 +169,51 @@ async function init(state: State): Promise<void> {
   apply(state, r.value);
 }
 
-// Reconcile the accrual window with the current eligibility (allowed +
-// active tab) and report any elapsed screen time. Called from the periodic
-// interval, from visibility/focus/pagehide events, and from apply() when the
-// gate decision flips. Idempotent: each call measures elapsed from the stored
-// timestamp and resets it, so overlapping triggers never double-count.
+// Reconcile both accrual windows with the current eligibility and report any
+// elapsed time. Called from the periodic interval, from visibility/focus/pagehide
+// events, and from apply() when the gate decision flips. Idempotent: each call
+// measures elapsed from the stored baselines and resets them, so overlapping
+// triggers never double-count.
+//
+// Two mutually-exclusive stopwatches share one budget: while the tab is the active
+// (visible+focused) tab we count wall-clock time (covers scrolling / paused-but-
+// watching); while it's inactive but an audible media element is playing we count
+// the media's playback progress instead (so a backgrounded podcast still debits).
+// Because the two are gated on `active` vs `!active`, at most one delta is > 0 per
+// step — the budget is never charged twice for the same moment.
 function pump(state: State): void {
   if (!state.ctx.isValid) return;
-  const eligible = state.allowed && isActiveTab();
-  const { deltaMs, lastAt } = stepAccrual(state.lastAt, eligible, Date.now());
-  state.lastAt = lastAt;
+  const now = Date.now();
+  const active = isActiveTab();
+  const m = readPlayingMedia();
+  // A swapped media element (SPA navigation / next video) resets the media
+  // baseline, so a currentTime discontinuity isn't mistaken for elapsed playback.
+  if (m && m.el !== state.mediaEl) state.media = { lastCt: null, lastWall: null };
+  if (m) state.mediaEl = m.el;
+
+  const wall = stepAccrual(state.lastAt, state.allowed && active, now);
+  state.lastAt = wall.lastAt;
+
+  const media = stepMediaAccrual(
+    state.media,
+    state.allowed && !active && m !== null,
+    m?.currentTime ?? 0,
+    m?.playbackRate ?? 1,
+    now,
+  );
+  state.media = { lastCt: media.lastCt, lastWall: media.lastWall };
+
+  const deltaMs = wall.deltaMs + media.deltaMs;
+  if (m || deltaMs > 0) {
+    // Verbose-only: lets the user verify background accrual on a real device.
+    log.debug('gate pump', {
+      active,
+      ct: m?.currentTime,
+      rate: m?.playbackRate,
+      wallMs: wall.deltaMs,
+      mediaMs: media.deltaMs,
+    });
+  }
   if (deltaMs > 0) void sendToBackground({ type: 'USAGE_TICK', deltaMs });
 }
 

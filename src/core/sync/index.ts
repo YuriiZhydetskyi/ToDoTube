@@ -10,7 +10,7 @@
 //     union dedupes our own record (fresh local vs last-pushed remote copy) and
 //     counts simultaneous watching on two devices only once.
 
-import { localDayKey, shiftDay } from '@/shared/day';
+import { localDayKey, shiftDay, splitByLocalDay } from '@/shared/day';
 import { capIntervals, coalesce, type DeviceDayUsage, unionLengthMs } from '@/shared/intervals';
 import { log } from '@/shared/logger';
 import {
@@ -57,15 +57,23 @@ export async function getSpentTodayMs(now: number): Promise<number> {
 // Record a tick of real elapsed time: append [now-deltaMs, now] to this device's
 // LOCAL record, normalize, cap, prune old days, then push to the remote
 // (throttled). Mirrors the old addSpentMs entry point.
+//
+// A large catch-up flush (e.g. a long background-audio session reconciled when the
+// tab regains focus) can straddle local midnight, so the interval is split per
+// local day and each segment written under its own day key — each device-day
+// record must hold only same-day intervals for coalesce/cap/prune to be correct.
+// A normal within-day tick yields one segment, so the common path is unchanged.
 export async function recordUsage(now: number, deltaMs: number): Promise<void> {
   if (deltaMs <= 0) return;
   const deviceId = await getDeviceId();
-  const day = localDayKey(now);
 
-  const own = await readOwnLocal(day, deviceId);
-  const intervals = capIntervals(coalesce([...own.intervals, { start: now - deltaMs, end: now }]));
-  await putDeviceDayUsage('local', { deviceId, day, intervals });
-  await pruneOwnUsage('local', deviceId, shiftDay(day, -USAGE_KEEP_DAYS));
+  for (const seg of splitByLocalDay(now - deltaMs, now)) {
+    const day = localDayKey(seg.start);
+    const own = await readOwnLocal(day, deviceId);
+    const intervals = capIntervals(coalesce([...own.intervals, seg]));
+    await putDeviceDayUsage('local', { deviceId, day, intervals });
+  }
+  await pruneOwnUsage('local', deviceId, shiftDay(localDayKey(now), -USAGE_KEEP_DAYS));
 
   await pushRemote(now, false);
 }

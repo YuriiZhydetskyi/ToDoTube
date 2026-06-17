@@ -44,3 +44,66 @@ export function stepAccrual(lastAt: number | null, eligible: boolean, now: numbe
   if (lastAt === null) return { deltaMs: 0, lastAt: null };
   return { deltaMs: clamp(now - lastAt), lastAt: null };
 }
+
+// The second "stopwatch": accrual driven by a media element's playback position
+// instead of wall time. Used when the tab is INACTIVE but a media element is
+// playing audibly (a YouTube video listened to as a podcast with the screen off /
+// browser minimised / another tab focused). On mobile the content-script JS is
+// throttled or frozen while backgrounded, so we can't trust wall-clock ticks;
+// instead we read how far `currentTime` advanced whenever the JS next runs and
+// convert media time to real time via `playbackRate` (so 2x playback counts real
+// seconds, not content seconds). See docs/GATING.md and the gatekeeper's pump().
+
+// An open media window tracks the playback position (`lastCt`, in SECONDS) and the
+// wall timestamp (`lastWall`, in epoch ms) it has accrued up to; both null when
+// the window is closed. Carried in the content-script controller's State.
+export interface MediaAccrualState {
+  lastCt: number | null;
+  lastWall: number | null;
+}
+
+export interface MediaAccrualStep extends MediaAccrualState {
+  // Real elapsed listening time to add to today's total (always >= 0).
+  deltaMs: number;
+}
+
+// Reconcile the media window against current eligibility at time `now`. `eligible`
+// is true when the tab is inactive AND an audible media element is present (see
+// readPlayingMedia). `currentTime`/`playbackRate` are that element's values now.
+//
+// The accrued amount is how far playback advanced (`currentTime - lastCt`),
+// converted from media seconds to wall milliseconds by dividing by playbackRate,
+// then clamped to [0, real wall time elapsed]. That wall clamp is also the guard:
+// a forward seek or a frozen-then-resumed gap can never count more than the real
+// time that passed, a backward seek (or paused element) yields 0, and a true
+// system sleep counts ~0 because the media froze too. So no fixed sleep cap is
+// needed on this path — unlike stepAccrual, a legitimately long background session
+// must be allowed to flush in one large delta.
+export function stepMediaAccrual(
+  prev: MediaAccrualState,
+  eligible: boolean,
+  currentTime: number,
+  playbackRate: number,
+  now: number,
+): MediaAccrualStep {
+  const { lastCt, lastWall } = prev;
+  // Window closed: open a fresh one (baselines only, no accrual) or stay closed.
+  if (lastCt === null) {
+    return eligible
+      ? { deltaMs: 0, lastCt: currentTime, lastWall: now }
+      : { deltaMs: 0, lastCt: null, lastWall: null };
+  }
+
+  // Window open: measure the advance since the baseline.
+  const ctDeltaSec = currentTime - lastCt;
+  const wallMs = now - (lastWall ?? now);
+  const mediaMs = playbackRate > 0 ? (ctDeltaSec / playbackRate) * 1000 : 0;
+  const deltaMs = Math.min(Math.max(0, mediaMs), Math.max(0, wallMs));
+
+  // Eligible → keep the window open, advancing both baselines (even when the
+  // delta clamped to 0, e.g. a backward seek, so the next step measures forward).
+  // Not eligible → flush this tail (e.g. on refocus) and close.
+  return eligible
+    ? { deltaMs, lastCt: currentTime, lastWall: now }
+    : { deltaMs, lastCt: null, lastWall: null };
+}

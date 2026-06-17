@@ -144,13 +144,14 @@ grantMinutes` and resets progress. `COMPLETE_TASK` in the background
 
 ## Locked decisions
 
-| #   | Decision                | Choice (date)                                                                                                                                                          |
-| --- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Blocking scope          | **Whole site, multiple sites** (one site-wide content script over a configurable blocklist) — 2026-05-29; extended to TikTok/Facebook/Threads/X/Instagram — 2026-06-02 |
-| 2   | Extensibility           | **Registry (dev plugins) + a generic config gate**; no runtime user code (MV3 forbids remote code) — 2026-05-29                                                        |
-| 3   | First gate              | **task-complete** — 2026-05-29                                                                                                                                         |
-| 4   | Anki source unreachable | **Fail-closed** (block; clear "open Anki" message + easy off switch) — 2026-05-29                                                                                      |
-| 5   | "Time spent"            | **Active blocked tab** (focused + not idle); one shared tally across all enabled sites — 2026-05-29                                                                    |
+| #   | Decision                | Choice (date)                                                                                                                                                                                                                                                                     |
+| --- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Blocking scope          | **Whole site, multiple sites** (one site-wide content script over a configurable blocklist) — 2026-05-29; extended to TikTok/Facebook/Threads/X/Instagram — 2026-06-02                                                                                                            |
+| 2   | Extensibility           | **Registry (dev plugins) + a generic config gate**; no runtime user code (MV3 forbids remote code) — 2026-05-29                                                                                                                                                                   |
+| 3   | First gate              | **task-complete** — 2026-05-29                                                                                                                                                                                                                                                    |
+| 4   | Anki source unreachable | **Fail-closed** (block; clear "open Anki" message + easy off switch) — 2026-05-29                                                                                                                                                                                                 |
+| 5   | "Time spent"            | **Active blocked tab** (focused + not idle); one shared tally across all enabled sites — 2026-05-29                                                                                                                                                                               |
+| 6   | Background audio        | **Also accrue while the tab is inactive but an audible `<video>`/`<audio>` element is playing** (listening to a video as a podcast). Measured via media `currentTime`/`playbackRate`, reconciled on resume — works on Firefox Android, where background JS is frozen — 2026-06-17 |
 
 ## Extending: adding a new gate
 
@@ -170,18 +171,71 @@ override.
 ## Shipped: screen-time accrual
 
 The site-wide gate content script (`overlay-controller.ts`) reports a
-`USAGE_TICK` every 20 s **only while** access is allowed and the tab is
-visible + focused (decision #5); the background accrues it. Backgrounded
-tabs fail the visibility/focus check (and are timer-throttled), so they
-don't accrue. Budget re-evaluation rides the existing 1-minute gate alarm.
-The tally is a single daily total, so every enabled site contributes to it
-(see below).
+`USAGE_TICK` while access is allowed; the background accrues it. `pump()` runs
+**two mutually-exclusive stopwatches** every tick/event — gated on `active`
+vs `!active`, so a single moment is never charged twice (`accrual.ts`):
 
-`core/gatekeeper/usage.ts` is now a thin facade over `core/sync`: a tick
-becomes a wall-clock **interval** in this device's daily record, and
-`spentTodayMs` is the **union** of all the user's devices' intervals — the
-same single-device behavior when sync is off, plus correct overlap handling
-when it's on. **Multi-device sync is its own subsystem — see `docs/SYNC.md`.**
+- **Active tab** (`isActiveTab()` = visible + focused, decision #5):
+  **wall-clock** time via the pure `stepAccrual` reducer, capped per step by a
+  40 s sleep-guard. Covers scrolling and paused-but-watching on every site.
+- **Inactive tab + audible media** (decision #6): real **listening** time via
+  `stepMediaAccrual` + the `shared/media.ts` sensor. When the tab is
+  backgrounded (other tab, screen off, browser minimised) but a `<video>`/
+  `<audio>` element is playing with `!muted && volume > 0`, the budget accrues
+  `clamp(Δ(currentTime) / playbackRate, 0, Δwall)` — how far playback advanced,
+  converted from content time to real time (so **2× speed counts real
+  seconds**), bounded by the real wall time elapsed. That wall bound is also the
+  guard: a forward seek, a frozen-then-resumed gap, and system sleep can never
+  count more than the real time that passed; a backward seek or paused element
+  counts 0. No fixed sleep-cap on this path — a long legitimate background
+  session must flush in one large delta.
+
+**Why a media clock for the background, not wall-clock?** On Firefox Android a
+backgrounded tab's JS is throttled or frozen and the tab can be killed, so a
+wall-clock tick can't be trusted while backgrounded. `currentTime` advances with
+playback regardless, so the time is **reconciled on resume**: the
+`visibilitychange`/`focus`/`pageshow` pump on return flushes whatever played in
+between (the periodic 20 s interval is unreliable while backgrounded). The
+trade-offs: the budget isn't debited in real time while the screen is off
+(impossible with frozen JS) — it catches up when the tab is next reached; and
+the _switched-to-another-tab_ case can lose the unreported tail if Fenix
+discards the tab. `core/lifecycle`'s on-screen countdown stays active-only; the
+popup's authoritative `budgetMsLeft` refreshes from the background on return.
+
+`core/gatekeeper/usage.ts` is a thin facade over `core/sync`: a tick becomes a
+wall-clock **interval** `[now-deltaMs, now]` in this device's daily record, and
+`spentTodayMs` is the **union** of all the user's devices' intervals — the same
+single-device behavior when sync is off, plus correct overlap handling when it's
+on. The union dedupes overlapping intervals, so **two tabs playing in the same
+wall-clock window count once** (no cross-tab coordination). `recordUsage` splits
+a delta that straddles **local midnight** across day keys (`splitByLocalDay` in
+`shared/day.ts`), so a large background flush attributes to the right day(s).
+**Multi-device sync is its own subsystem — see `docs/SYNC.md`.**
+
+### Verifying background-audio accrual on Firefox Android
+
+This path depends on platform behaviour that unit tests can't cover (whether the
+content-script JS survives backgrounding, which events fire on return), so
+verify it on a real device if it ever misbehaves:
+
+1. `pnpm build:firefox` and load the extension on the phone (`pnpm
+dev:firefox-android`, or load `.output/firefox-mv3` via `about:debugging`).
+2. Turn on **Verbose logging** (options → Advanced) so `pump()` emits
+   `[ToDoTube] gate pump { active, ct, rate, wallMs, mediaMs }` lines. Watch them
+   over USB: desktop Firefox → `about:debugging` → the phone → Inspect → Console.
+3. Enable a blocked site + a budget gate (e.g. Anki) with some budget left, then
+   play a YouTube video.
+4. Exercise each background case and **return to the tab** each time — check the
+   popup's remaining budget dropped by ~the elapsed time and the console logged
+   `mediaMs > 0` on return:
+   - **screen off** (tab still active) — the main case;
+   - **switch to another app** (browser minimised);
+   - **switch to another tab**.
+5. Confirm the edge behaviours:
+   - **2× playback** debits real time, not 2× (1 min at 2× → ~1 min);
+   - **headphone / lock-screen pause** with the screen off does **not** debit
+     (currentTime freezes → `mediaMs` 0 on return);
+   - an **active** tab still debits exactly as before (`wallMs` > 0, `mediaMs` 0).
 
 ## Shipped: multi-site blocking
 
