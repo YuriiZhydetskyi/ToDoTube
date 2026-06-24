@@ -53,6 +53,7 @@ export interface Schema {
   // Settings.gating directly (the options page) — the background's settings
   // watcher then broadcasts GATE_CHANGED — so there's no GATE_SET_* message.
   GATE_EVAL: { req: Empty; res: GateEvalResult };
+  REFRESH_GATE_TASKS: { req: Empty; res: GateEvalResult };
 
   // Completes a task via the active provider without the content script
   // needing to know which provider is active. Used by the block screen's

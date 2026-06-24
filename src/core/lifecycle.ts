@@ -464,13 +464,19 @@ function refreshUi(state: State): void {
   // else keep current UI (empty / error) until a refresh delivers data
 }
 
-async function fetchTasks(state: State): Promise<void> {
+async function fetchTasks(state: State, force = false): Promise<void> {
   setUi(state, { kind: 'loading' });
-  const r = await sendToBackground({
-    type: 'LIST_TASKS',
-    providerId: state.providerId,
-    listId: state.listId,
-  });
+  const r = force
+    ? await sendToBackground({
+        type: 'REFRESH_NOW',
+        providerId: state.providerId,
+        listId: state.listId,
+      })
+    : await sendToBackground({
+        type: 'LIST_TASKS',
+        providerId: state.providerId,
+        listId: state.listId,
+      });
   if (!state.ctx.isValid) return;
   if (!r.ok) {
     setUi(state, { kind: 'error', message: r.error });
@@ -541,7 +547,7 @@ function buildHeader(state: State, surface: PanelSurface): PanelHeader | undefin
     onListChange: (listId) => void onListPicked(state, listId),
     onRefresh: () => {
       void loadProjects(state);
-      void fetchTasks(state);
+      void fetchTasks(state, true);
     },
     onPeek: surface === 'rail' ? () => onPeekClick(state) : undefined,
     onClose: surface === 'endscreen' ? () => onEndscreenClose(state) : undefined,

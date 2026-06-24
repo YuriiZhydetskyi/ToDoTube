@@ -8,6 +8,7 @@ import { remainingBudgetMs } from '@/shared/budget';
 import { ok } from '@/shared/messaging';
 import { getProviderState, getSettings, setSettings } from '@/shared/storage';
 
+import { invalidateTaskCache } from '../task-cache';
 import { enrichWithTasks, type HandlerMap } from './shared';
 
 export const gateHandlers = {
@@ -31,6 +32,11 @@ export const gateHandlers = {
 
   GATE_EVAL: async () => ok(await enrichWithTasks(await evaluateGate())),
 
+  REFRESH_GATE_TASKS: async () => {
+    invalidateTaskCache();
+    return ok(await enrichWithTasks(await evaluateGate()));
+  },
+
   USAGE_TICK: async (req) => {
     // Accrue screen time into this device's interval record (and a throttled
     // push to the sync transport). Re-blocking on budget exhaustion is handled
@@ -38,4 +44,7 @@ export const gateHandlers = {
     await recordUsage(Date.now(), req.deltaMs);
     return ok(null);
   },
-} satisfies Pick<HandlerMap, 'GET_STATE' | 'SET_ENABLED' | 'GATE_EVAL' | 'USAGE_TICK'>;
+} satisfies Pick<
+  HandlerMap,
+  'GET_STATE' | 'SET_ENABLED' | 'GATE_EVAL' | 'REFRESH_GATE_TASKS' | 'USAGE_TICK'
+>;

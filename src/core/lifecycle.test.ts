@@ -135,6 +135,7 @@ function installMessagingMocks(): void {
           budgetMsLeft: null,
         });
       case 'LIST_TASKS':
+      case 'REFRESH_NOW':
         return ok(tasksResponse);
       case 'LIST_PROJECTS':
         return err('projects not loaded in test');
@@ -312,6 +313,23 @@ describe('SPA navigation mounting', () => {
   });
 });
 
+describe('manual refresh', () => {
+  it('bypasses the task cache through REFRESH_NOW', async () => {
+    await boot('/watch?v=1', fixture);
+    vi.mocked(sendToBackground).mockClear();
+
+    const host = railHost();
+    if (!host?.shadowRoot) throw new Error('rail host or shadow root missing');
+    host.shadowRoot.querySelector<HTMLButtonElement>('.tt-panel__refresh')?.click();
+    await flush();
+
+    expect(sendToBackground).toHaveBeenCalledWith({
+      type: 'REFRESH_NOW',
+      providerId: DEFAULT_PROVIDER_ID,
+      listId,
+    });
+  });
+});
 describe('AUTH_CHANGED recovery', () => {
   function listTasksCalls(): number {
     return vi

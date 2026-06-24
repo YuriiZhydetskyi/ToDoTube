@@ -286,12 +286,20 @@ function apply(state: State, result: GateEvalResult): void {
   showOverlay(state, result.decision.requirement);
 }
 
-const blockScreenCallbacks: BlockScreenCallbacks = {
-  onCompleteTask: async (projectId, taskId) => {
-    const r = await sendToBackground({ type: 'COMPLETE_GATE_TASK', projectId, taskId });
-    return r.ok;
-  },
-};
+function blockScreenCallbacks(state: State): BlockScreenCallbacks {
+  return {
+    onCompleteTask: async (projectId, taskId) => {
+      const r = await sendToBackground({ type: 'COMPLETE_GATE_TASK', projectId, taskId });
+      return r.ok;
+    },
+    onRefreshTasks: async () => {
+      const r = await sendToBackground({ type: 'REFRESH_GATE_TASKS' });
+      if (!state.ctx.isValid || !r.ok) return false;
+      apply(state, r.value);
+      return true;
+    },
+  };
+}
 
 function showOverlay(state: State, requirement: RequirementView): void {
   const sig = JSON.stringify(requirement);
@@ -302,7 +310,7 @@ function showOverlay(state: State, requirement: RequirementView): void {
     state.overlay = mountBlockOverlay({ cssText: blockScreenCss });
   }
   state.lastSig = sig;
-  renderBlockScreen(state.overlay.root, requirement, blockScreenCallbacks);
+  renderBlockScreen(state.overlay.root, requirement, blockScreenCallbacks(state));
 }
 
 function removeOverlay(state: State): void {

@@ -15,6 +15,8 @@ export interface BlockScreenCallbacks {
   // Completes a task from the block-screen list. Resolves true on success,
   // false on failure so the row can re-enable itself and signal the error.
   onCompleteTask?: (projectId: string, taskId: string) => Promise<boolean>;
+  // Drops the provider cache and asks the background for a fresh task list.
+  onRefreshTasks?: () => Promise<boolean>;
 }
 
 export function renderBlockScreen(
@@ -49,7 +51,9 @@ export function renderBlockScreen(
     card.appendChild(renderAction(requirement.action));
   }
   if (requirement.tasks !== undefined) {
-    card.appendChild(renderTaskList(requirement.tasks, callbacks?.onCompleteTask));
+    card.appendChild(
+      renderTaskList(requirement.tasks, callbacks?.onCompleteTask, callbacks?.onRefreshTasks),
+    );
   }
 
   root.appendChild(card);
@@ -89,8 +93,29 @@ function renderAction(action: NonNullable<RequirementView['action']>): HTMLEleme
 function renderTaskList(
   tasks: NonNullable<RequirementView['tasks']>,
   onComplete?: (projectId: string, taskId: string) => Promise<boolean>,
+  onRefresh?: () => Promise<boolean>,
 ): HTMLElement {
   const wrap = el('div', 'tt-block__tasks');
+  const controls = el('div', 'tt-block__tasks-controls');
+  const refresh = el('button', 'tt-block__tasks-refresh') as HTMLButtonElement;
+  refresh.type = 'button';
+  refresh.textContent = 'Refresh tasks';
+  refresh.addEventListener('click', () => {
+    if (refresh.disabled) return;
+    refresh.disabled = true;
+    refresh.textContent = 'Refreshing...';
+    refresh.classList.remove('tt-block__tasks-refresh--error');
+    void Promise.resolve(onRefresh?.()).then((ok) => {
+      // A successful refresh normally replaces this DOM through apply(). If the
+      // result is unchanged, restore the button in place.
+      if (!refresh.isConnected) return;
+      refresh.disabled = false;
+      refresh.textContent = ok === false ? 'Refresh failed - retry' : 'Refresh tasks';
+      refresh.classList.toggle('tt-block__tasks-refresh--error', ok === false);
+    });
+  });
+  controls.appendChild(refresh);
+  wrap.appendChild(controls);
 
   if (tasks.length === 0) {
     const empty = el('p', 'tt-block__tasks-empty');

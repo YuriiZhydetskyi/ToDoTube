@@ -63,15 +63,17 @@ export async function enrichWithTasks(result: GateEvalResult): Promise<GateEvalR
     const state = await getProviderState(settings.activeProviderId);
     const listId: ListId =
       state.activeListId ?? getProviderDescriptor(settings.activeProviderId).defaultListId;
-    // Shares the cached "open tasks" read with the watch panel; we only show
-    // the first few on the block screen.
+    // Shares the cached "open tasks" read with the watch panel. Focus Mode
+    // follows the same sorting and item limit configured for the task panel.
     const r = await cachedListTasks(provider, listId, false);
     if (!r.ok) return result;
+    const sorted = sortTasks(r.value, settings.sortBy);
+    const tasks = settings.maxItems > 0 ? sorted.slice(0, settings.maxItems) : sorted;
     return {
       ...result,
       decision: {
         ...result.decision,
-        requirement: { ...result.decision.requirement, tasks: r.value.slice(0, 10) },
+        requirement: { ...result.decision.requirement, tasks },
       },
     };
   } catch (e) {

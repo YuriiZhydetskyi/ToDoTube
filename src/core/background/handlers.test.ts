@@ -197,6 +197,45 @@ describe('message dispatch', () => {
       expect(r.value.gateId).toBe(TASK_COMPLETE_GATE_ID);
       expect(r.value.decision.allowed).toBe(false);
     });
+    it('uses maxItems and refreshes the Focus Mode task cache on demand', async () => {
+      let listCalls = 0;
+      let openTasks = Array.from({ length: 15 }, (_, i) => task(`old-${i}`));
+      currentProvider = {
+        ...stubProvider([]),
+        listTasks: async () => {
+          listCalls++;
+          return ok(openTasks);
+        },
+      };
+      await setSettings({
+        activeProviderId: 'ticktick',
+        maxItems: 12,
+        sortBy: 'providerOrder',
+      });
+      await setProviderState('ticktick', { activeListId: 'list-a' });
+      await enableTaskGate({ failMode: 'closed' });
+
+      const initial = await sendToBackground({ type: 'GATE_EVAL' });
+      expect(initial.ok).toBe(true);
+      if (!initial.ok || !initial.value.gating) return;
+      expect(initial.value.decision.requirement.tasks).toHaveLength(12);
+      expect(initial.value.decision.requirement.tasks?.[0]?.id).toBe('old-0');
+      expect(listCalls).toBe(1);
+
+      openTasks = Array.from({ length: 15 }, (_, i) => task(`fresh-${i}`));
+      const cached = await sendToBackground({ type: 'GATE_EVAL' });
+      expect(cached.ok).toBe(true);
+      if (!cached.ok || !cached.value.gating) return;
+      expect(cached.value.decision.requirement.tasks?.[0]?.id).toBe('old-0');
+      expect(listCalls).toBe(1);
+
+      const refreshed = await sendToBackground({ type: 'REFRESH_GATE_TASKS' });
+      expect(refreshed.ok).toBe(true);
+      if (!refreshed.ok || !refreshed.value.gating) return;
+      expect(refreshed.value.decision.requirement.tasks).toHaveLength(12);
+      expect(refreshed.value.decision.requirement.tasks?.[0]?.id).toBe('fresh-0');
+      expect(listCalls).toBe(2);
+    });
   });
 
   describe('USAGE_TICK', () => {
