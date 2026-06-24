@@ -40,7 +40,7 @@ export const BLOCKED_SITES: readonly BlockedSiteDef[] = [
     id: 'facebook',
     label: 'Facebook',
     domains: ['facebook.com'],
-    excludeDomains: ['business.facebook.com'],
+    excludeDomains: ['business.facebook.com', 'eventsmanager.facebook.com'],
   },
   { id: 'threads', label: 'Threads', domains: ['threads.net', 'threads.com'] },
   { id: 'x', label: 'X (Twitter)', domains: ['x.com'] },

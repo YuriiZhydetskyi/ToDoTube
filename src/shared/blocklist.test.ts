@@ -60,6 +60,16 @@ describe('siteForHostname', () => {
     expect(siteForHostname('web.facebook.com')?.id).toBe('facebook');
   });
 
+  it('excludes eventsmanager.facebook.com so Meta Events Manager stays usable', () => {
+    expect(siteForHostname('eventsmanager.facebook.com')).toBeNull();
+    // Same exclude-before-match + case-folding contract as the others.
+    expect(siteForHostname('EventsManager.Facebook.COM')).toBeNull();
+    // A deeper subdomain under the excluded host stays excluded.
+    expect(siteForHostname('foo.eventsmanager.facebook.com')).toBeNull();
+    // But plain Facebook (apex + other subdomains) is still blocked.
+    expect(siteForHostname('facebook.com')?.id).toBe('facebook');
+  });
+
   it('returns null for hosts that only look like a blocked site', () => {
     expect(siteForHostname('notyoutube.com')).toBeNull();
     expect(siteForHostname('max.com')).toBeNull(); // must not match the bare "x.com" rule
@@ -100,6 +110,7 @@ describe('match-pattern exports', () => {
     expect(BLOCKED_SITE_EXCLUDE_MATCHES).toEqual([
       '*://*.music.youtube.com/*',
       '*://*.business.facebook.com/*',
+      '*://*.eventsmanager.facebook.com/*',
     ]);
   });
 
