@@ -47,6 +47,7 @@ export async function listProjects(): Promise<Result<TickTickProject[], string>>
   const r = await authedFetch('/open/v1/project');
   if (!r.ok) return err(r.error);
   const json = await safeJson(r.value);
+  logApiResponse('/open/v1/project', json);
   if (!Array.isArray(json)) return err('Expected an array from /open/v1/project');
   return ok(json.filter(isTickTickProject));
 }
@@ -55,6 +56,7 @@ export async function getProjectData(projectId: string): Promise<Result<ProjectD
   const r = await authedFetch(`/open/v1/project/${encodeURIComponent(projectId)}/data`);
   if (!r.ok) return err(r.error);
   const json = await safeJson(r.value);
+  logApiResponse(`/open/v1/project/${projectId}/data`, json);
   if (!isProjectData(json)) return err('Malformed project data response');
   return ok(json);
 }
@@ -82,6 +84,7 @@ export async function getCompletedTasks(params: {
   });
   if (!r.ok) return err(r.error);
   const json = await safeJson(r.value);
+  logApiResponse('/open/v1/task/completed', json);
   if (!Array.isArray(json)) return err('Expected an array from /open/v1/task/completed');
   return ok(json.filter(isTickTickTask));
 }
@@ -117,6 +120,8 @@ async function authedFetch(
     return err(`Network error: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  log.debug(`TickTick API ${init?.method ?? 'GET'} ${path} -> ${resp.status} ${resp.statusText}`);
+
   if (resp.status === 401 && !retried) {
     log.debug('TickTick 401; refreshing and retrying once');
     return authedFetch(path, init, true);
@@ -129,6 +134,12 @@ async function authedFetch(
   return ok(resp);
 }
 
+function logApiResponse(path: string, payload: unknown): void {
+  // Keep this as an object so DevTools shows an expandable payload, including
+  // every task field returned by TickTick. `log.debug` gates it behind the
+  // user's Verbose logging setting.
+  log.debug(`TickTick API response ${path}:`, payload);
+}
 async function safeJson(resp: Response): Promise<unknown> {
   try {
     return await resp.json();
